@@ -120,6 +120,34 @@ function makeScalarReading(key: string, raw: string, unitToken: string): PushRea
   }
 }
 
+/** Per-channel field patterns: regex (capturing the channel) + the parseValue unit token. */
+const CHANNEL_FIELDS: ReadonlyArray<{ readonly re: RegExp; readonly unit: string }> = [
+  { re: /^temp(\d)f$/, unit: 'F' }, // WH31 temperature, channel 1..8
+  { re: /^humidity(\d)$/, unit: '%' }, // WH31 humidity, channel 1..8
+  { re: /^soilmoisture(\d)$/, unit: '%' }, // WH51 soil moisture
+  { re: /^tf_ch(\d)$/, unit: 'F' }, // WN34 soil temperature
+  { re: /^pm25_ch(\d)$/, unit: 'µg/m³' }, // WH41 PM2.5 live
+  { re: /^pm25_avg_24h_ch(\d)$/, unit: 'µg/m³' }, // WH41 PM2.5 24h avg
+  { re: /^leak_ch(\d)$/, unit: '' }, // WH55 leak state (0/1)
+];
+
+/** Try to decode a per-channel measurement field; undefined when the key matches none. */
+function decodeChannelField(key: string, raw: string): PushReading | undefined {
+  for (const { re, unit } of CHANNEL_FIELDS) {
+    const m = re.exec(key);
+    if (m === null || m[1] === undefined) continue;
+    const channel = Number(m[1]);
+    if (raw.trim() === '') return undefined;
+    try {
+      const parsed = parseValue({ val: raw, unit });
+      return { key, value: parsed.value, unit: parsed.unit, raw, channel };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /** Decode a flat push form map into station metadata + unified readings. Tolerates unknown keys. */
 export function decodePushForm(form: Readonly<Record<string, string>>): PushDecodeResult {
   const readings: PushReading[] = [];
@@ -134,7 +162,13 @@ export function decodePushForm(form: Readonly<Record<string, string>>): PushDeco
       if (reading !== undefined) readings.push(reading);
       continue;
     }
-    // channel + battery decoding added in Tasks 3.3-3.5; unknown keys ignored.
+
+    const channelReading = decodeChannelField(key, value);
+    if (channelReading !== undefined) {
+      readings.push(channelReading);
+      continue;
+    }
+    // battery decoding added in Task 3.5; unknown keys ignored.
   }
 
   const station: PushStationInfo = {

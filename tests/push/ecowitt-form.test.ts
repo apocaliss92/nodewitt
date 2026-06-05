@@ -63,3 +63,35 @@ describe('decodePushForm — scalar measurements (imperial -> SI)', () => {
     expect(by('uv')?.value).toBe(4);
   });
 });
+
+describe('decodePushForm — per-channel measurements', () => {
+  it('decodes numbered channel fields with channel set', () => {
+    const { readings } = decodePushForm({
+      PASSKEY: 'X',
+      temp1f: '68.0',
+      humidity1: '45',
+      temp2f: '70.0',
+      humidity2: '50',
+      soilmoisture1: '33',
+      tf_ch1: '59.0',
+      pm25_ch1: '12.5',
+      pm25_avg_24h_ch1: '10.0',
+      leak_ch1: '1',
+    });
+    const by = (k: string) => readings.find((r) => r.key === k);
+
+    expect(by('temp1f')?.value).toBeCloseTo(20.0, 1);
+    expect(by('temp1f')?.channel).toBe(1);
+    expect(by('humidity1')?.value).toBe(45);
+    expect(by('humidity1')?.channel).toBe(1);
+    expect(by('temp2f')?.channel).toBe(2);
+    expect(by('soilmoisture1')?.value).toBe(33);
+    expect(by('soilmoisture1')?.channel).toBe(1);
+    expect(by('tf_ch1')?.value).toBeCloseTo(15.0, 1);
+    expect(by('tf_ch1')?.channel).toBe(1);
+    expect(by('pm25_ch1')?.value).toBeCloseTo(12.5, 1);
+    expect(by('pm25_ch1')?.channel).toBe(1);
+    expect(by('leak_ch1')?.value).toBe(1);
+    expect(by('leak_ch1')?.channel).toBe(1);
+  });
+});
