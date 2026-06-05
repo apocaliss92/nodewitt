@@ -179,11 +179,14 @@ function isSensitiveFrameKey(key: string): boolean {
  * Extract the flat, classifiable `(key, value)` pairs from a raw transport frame so the accumulator
  * can scan them for unmapped measurement keys / undecodable batteries.
  *
- * - A `push` frame is already a flat `Record<string,string>` — every entry is a candidate key.
- * - A `poll` frame is the raw `/get_livedata_info` object: its sub-arrays (`common_list`, `ch_*`,
- *   `rain`, …) hold items. A `common_list`-style item carries its measurement key under `id` (a hex
- *   id like `0x02`); other channel items use named fields. We surface each item's `id` (paired with
- *   `val`) plus any string-keyed scalar field, skipping pure structural keys.
+ * - A `push` frame is already a flat `Record<string,string>` — every entry is a candidate key
+ *   (e.g. `tempf`, `soilmoisture1`, a brand-new `foobar99`).
+ * - A `poll` frame is the raw `/get_livedata_info` object: its sub-arrays (`common_list`, `rain`,
+ *   `piezoRain`, `lightning`, …) hold items whose MEASUREMENT key is the `id` field (a hex id like
+ *   `0x02`). We surface ONLY those `id`s — the named channel fields (`intemp`, `temp`, `battery`,
+ *   `name`, …) are structural item fields, NOT measurement keys, and would be false-positive
+ *   "unmapped" noise; their readings already reach the Station via the decoder and surface through
+ *   the `sensor:`/`model:` signal. The genuine poll unmapped signal is a NEW hex id.
  *
  * Pure + defensive: tolerates any shape (an unexpected payload simply yields no keys).
  */
@@ -201,9 +204,8 @@ function extractFrameKeys(source: RawFrameSource, payload: unknown): FlatKey[] {
     }
     return out;
   }
-  // poll: walk the sub-arrays of the raw livedata envelope.
+  // poll: surface each sub-array item's `id` (the hex measurement key) only.
   if (!isPlainObject(payload)) return out;
-  const STRUCTURAL = new Set(['id', 'val', 'unit', 'channel']);
   for (const subArray of Object.values(payload)) {
     if (!Array.isArray(subArray)) continue;
     for (const item of subArray) {
@@ -211,11 +213,6 @@ function extractFrameKeys(source: RawFrameSource, payload: unknown): FlatKey[] {
       if (typeof item['id'] === 'string') {
         const val = item['val'];
         push(item['id'], typeof val === 'string' || typeof val === 'number' ? String(val) : '');
-      }
-      for (const [key, value] of Object.entries(item)) {
-        if (!STRUCTURAL.has(key) && (typeof value === 'string' || typeof value === 'number')) {
-          push(key, String(value));
-        }
       }
     }
   }

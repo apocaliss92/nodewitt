@@ -270,6 +270,22 @@ describe('Dumper', () => {
     expect(dumper.export().observations.properties['sensor:humidity']).toBeDefined();
   });
 
+  it('recordFrame feeds a frame directly when capturing, and is a no-op when not', () => {
+    const off = createDumper(new FakeEcowitt());
+    off.start();
+    off.recordFrame('push', { foobar99: 'x' }); // no-op (captureRawFrames off)
+    expect(off.export().observations.properties['key:foobar99']).toBeUndefined();
+    off.stop();
+
+    const on = createDumper(new FakeEcowitt(), { captureRawFrames: true });
+    on.start();
+    on.recordFrame('push', { foobar99: 'x' });
+    const dump = on.export();
+    expect(dump.observations.properties['key:foobar99']?.unmapped).toEqual(['foobar99']);
+    expect(dump.observations.rawFrames?.length).toBe(1);
+    on.stop();
+  });
+
   it('createDumper returns a Dumper instance', () => {
     expect(createDumper(new FakeEcowitt())).toBeInstanceOf(Dumper);
   });
