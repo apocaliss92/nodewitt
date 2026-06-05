@@ -80,7 +80,6 @@ const sensorsResponseSchema = z.union([
 ]);
 
 export type GatewayVersion = { version?: string; stationtype?: string; sensoridPage: number };
-export type LiveData = z.infer<typeof liveDataSchema>;
 export type SensorInfo = z.infer<typeof sensorSchema>;
 
 function parsePageCount(raw: string | number | undefined): number {
