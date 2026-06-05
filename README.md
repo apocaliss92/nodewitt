@@ -21,8 +21,11 @@ facade, which converges them onto one unified `Sensor` model with a typed event 
 
 The `Ecowitt` facade is the only public entry point. Pick a transport with `Ecowitt.createLocal`
 (poll the gateway over HTTP) or `Ecowitt.createListener` (receive the gateway's push uploads), then
-drive it with the same lifecycle: `start()` / `stop()`, subscribe with `on(...)` / `off(...)`, and
-read a point-in-time snapshot with `getStation()` (or `getSensors()`).
+drive it with the same lifecycle: `start()` / `stop()`, subscribe with `on(...)` / `off(...)` /
+`once(...)`, and read a point-in-time snapshot with `getStation()` (or `getSensors()`).
+
+> `stop()` is **terminal**: it tears down the transport and removes all listeners, and the instance
+> cannot be restarted. Create a new `Ecowitt` via `createLocal` / `createListener` to resume.
 
 ### Local poll
 

@@ -111,6 +111,19 @@ describe('Ecowitt.createLocal (wired via the internal seam)', () => {
     await client.stop();
   });
 
+  it('once() fires the listener exactly once', async () => {
+    const fake = fakePollerFactory();
+    const client = __createLocalWith({ host: 'x' }, (o) => fake.build(o));
+    let snapshots = 0;
+    client.once('snapshot', () => (snapshots += 1));
+    await client.start();
+    fake.fireReadings([{ key: 'temp1f', value: 20, unit: '°C', raw: '68 F', hardwareId: 'HID' }]);
+    fake.fireReadings([{ key: 'temp1f', value: 21, unit: '°C', raw: '70 F', hardwareId: 'HID' }]);
+    fake.fireReadings([{ key: 'temp1f', value: 22, unit: '°C', raw: '72 F', hardwareId: 'HID' }]);
+    expect(snapshots).toBe(1);
+    await client.stop();
+  });
+
   it('getSensors() returns the same sensors as getStation().sensors', async () => {
     const fake = fakePollerFactory();
     const client = __createLocalWith({ host: 'x' }, (o) => fake.build(o));
