@@ -79,6 +79,6 @@ describe.runIf(enabled)('push e2e: local synthetic upload', () => {
     expect(by('soilbatt1')?.battery).toBe(80);
     expect(by('wh90batt')?.battery).toBe(50);
 
-    console.log(`push e2e decoded ${result?.readings.length ?? 0} readings`);
+    expect(result?.readings.length ?? 0).toBeGreaterThan(0);
   });
 });
