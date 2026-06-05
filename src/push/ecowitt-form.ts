@@ -104,6 +104,8 @@ const SCALAR_FIELDS: Record<string, string> = {
   lightning_num: '',
   lightning: 'km',
   lightning_time: '',
+  // WS90 super-capacitor voltage — a raw voltage reading, NOT a battery percent.
+  ws90cap_volt: 'V',
   // CO2/AQ scalar parts (WH45) — channel-less
   co2: '',
   co2_24h: '',
@@ -152,11 +154,72 @@ function decodeChannelField(key: string, raw: string): PushReading | undefined {
   return undefined;
 }
 
+/** Battery field family -> which P1 decoder + how to read its channel. */
+type BatteryKind = 'binary' | 'bar' | 'voltage';
+
+interface BatteryMatch {
+  readonly kind: BatteryKind;
+  readonly channel?: number;
+}
+
+// Whole-station binary batteries (0 = full, 1 = low).
+const BINARY_BATT = new Set([
+  'wh25batt',
+  'wh26batt',
+  'wh40batt',
+  'wh57batt',
+  'wh65batt',
+  'wh68batt',
+  'wh80batt',
+]);
+
+// Channelized 0-5 "bar" batteries (percent = level * 20).
+const BAR_BATT_CHANNEL = /^(?:soilbatt|pm25batt|leakbatt|tf_batt|batt)(\d)$/;
+
+/** Classify a battery field, or undefined when the key is not a battery. */
+function classifyBattery(key: string): BatteryMatch | undefined {
+  if (BINARY_BATT.has(key)) return { kind: 'binary' };
+  // `ws90cap_volt` is intentionally NOT here: it is a raw capacitor voltage (emitted via the
+  // scalar table with unit "V"), not a battery percent. Only `wh90batt` is a voltage battery.
+  if (key === 'wh90batt') return { kind: 'voltage' };
+  const m = BAR_BATT_CHANNEL.exec(key);
+  if (m !== null && m[1] !== undefined) return { kind: 'bar', channel: Number(m[1]) };
+  return undefined;
+}
+
+/** Decode a battery field to a percent PushReading; undefined when undecodable. */
+function decodeBatteryField(key: string, raw: string): PushReading | undefined {
+  const match = classifyBattery(key);
+  if (match === undefined) return undefined;
+  const decoded =
+    match.kind === 'binary'
+      ? decodeBinaryBattery(raw)
+      : match.kind === 'bar'
+        ? decodeBarBattery(raw)
+        : decodeVoltageBattery(raw); // defaults 2.4..3.0 V window (matches P1)
+  if (decoded.percent === null) return undefined;
+  return {
+    key,
+    value: decoded.percent,
+    unit: '%',
+    raw,
+    battery: decoded.percent,
+    ...(match.channel !== undefined ? { channel: match.channel } : {}),
+  };
+}
+
 /** Decode a flat push form map into station metadata + unified readings. Tolerates unknown keys. */
 export function decodePushForm(form: Readonly<Record<string, string>>): PushDecodeResult {
   const readings: PushReading[] = [];
   for (const [key, value] of Object.entries(form)) {
     if (METADATA_KEYS.has(key)) continue;
+
+    // Battery check FIRST so `tf_batt{n}` is not mis-read as a `tf_` soil-temp measurement.
+    const batteryReading = decodeBatteryField(key, value);
+    if (batteryReading !== undefined) {
+      readings.push(batteryReading);
+      continue;
+    }
 
     const scalarUnit = Object.prototype.hasOwnProperty.call(SCALAR_FIELDS, key)
       ? SCALAR_FIELDS[key]
@@ -172,7 +235,7 @@ export function decodePushForm(form: Readonly<Record<string, string>>): PushDeco
       readings.push(channelReading);
       continue;
     }
-    // battery decoding added in Task 3.5; unknown keys ignored.
+    // unknown keys are ignored.
   }
 
   const station: PushStationInfo = {
@@ -188,6 +251,3 @@ export function decodePushForm(form: Readonly<Record<string, string>>): PushDeco
     readings,
   };
 }
-
-// Re-exported temporarily to keep the battery imports referenced until Task 3.5 consumes them.
-export { decodeBarBattery, decodeBinaryBattery, decodeVoltageBattery };

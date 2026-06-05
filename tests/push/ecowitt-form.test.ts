@@ -129,3 +129,48 @@ describe('decodePushForm — lightning', () => {
     expect(readings.find((r) => r.key === 'lightning_num')?.value).toBe(1);
   });
 });
+
+describe('decodePushForm — batteries', () => {
+  it('decodes binary, bar, and voltage batteries to percent', () => {
+    const { readings } = decodePushForm({
+      PASSKEY: 'X',
+      wh65batt: '0', // binary -> 100
+      wh40batt: '1', // binary -> 10
+      soilbatt1: '4', // bar -> 80
+      pm25batt1: '5', // bar -> 100
+      tf_batt1: '3', // bar -> 60
+      wh90batt: '2.7', // voltage 2.4..3.0 -> 50
+    });
+    const by = (k: string) => readings.find((r) => r.key === k);
+
+    expect(by('wh65batt')?.battery).toBe(100);
+    expect(by('wh40batt')?.battery).toBe(10);
+    expect(by('soilbatt1')?.battery).toBe(80);
+    expect(by('soilbatt1')?.channel).toBe(1);
+    expect(by('pm25batt1')?.battery).toBe(100);
+    expect(by('tf_batt1')?.battery).toBe(60);
+    expect(by('tf_batt1')?.channel).toBe(1);
+    expect(by('wh90batt')?.battery).toBe(50);
+  });
+
+  it('emits ws90cap_volt as a raw voltage reading, not a battery percent', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', ws90cap_volt: '5.2' });
+    const cap = readings.find((r) => r.key === 'ws90cap_volt');
+    expect(cap?.value).toBeCloseTo(5.2, 2);
+    expect(cap?.unit).toBe('V');
+    expect(cap?.battery).toBeUndefined();
+  });
+
+  it('does not mis-read tf_batt as a tf_ soil-temp measurement (battery check first)', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', tf_batt2: '5' });
+    const reading = readings.find((r) => r.key === 'tf_batt2');
+    expect(reading?.battery).toBe(100);
+    expect(reading?.channel).toBe(2);
+    expect(reading?.unit).toBe('%');
+  });
+
+  it('emits null-safe batteries: a malformed battery is skipped, not crashed', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', soilbatt1: 'NaNish' });
+    expect(readings.find((r) => r.key === 'soilbatt1')).toBeUndefined();
+  });
+});
