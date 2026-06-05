@@ -13,14 +13,17 @@ function makeEndpoints(
   over: Partial<{
     live: PollerEndpoints['getLiveData'];
     sensors: PollerEndpoints['getAllSensors'];
+    units: PollerEndpoints['getUnits'];
   }> = {},
 ): {
   getLiveData: ReturnType<typeof vi.fn>;
   getAllSensors: ReturnType<typeof vi.fn>;
+  getUnits: ReturnType<typeof vi.fn>;
 } {
   return {
     getLiveData: vi.fn(over.live ?? (async (): Promise<RawLiveData> => LIVE)),
     getAllSensors: vi.fn(over.sensors ?? (async (): Promise<SensorInfo[]> => SENSORS)),
+    getUnits: vi.fn(over.units ?? (async (): Promise<Record<string, unknown>> => ({}))),
   };
 }
 
@@ -71,6 +74,60 @@ describe('LocalPoller', () => {
     const first = batches[0]!;
     const reading = first.find((r) => r.key === '0x02');
     expect(reading?.hardwareId).toBe('A1'); // wh90 claims 0x02 -> mapped to A1
+
+    poller.stop();
+  });
+
+  it('decodes channelized temps as Fahrenheit (converted to °C) when the gateway unit is "1"', async () => {
+    const endpoints = makeEndpoints({
+      sensors: async (): Promise<SensorInfo[]> => [
+        { id: 'W31', img: 'wh31', name: 'Temp CH1', signal: '4' },
+      ],
+      live: async (): Promise<RawLiveData> => ({
+        common_list: [{ id: '0x02', val: '20.0' }],
+        ch_aisle: [{ channel: '1', temp: '72.0', humidity: '48%', battery: '0' }],
+      }),
+      units: async (): Promise<Record<string, unknown>> => ({ temperature: '1' }),
+    });
+    const batches: Array<Array<{ key: string; value: number; unit: string }>> = [];
+    const poller = new LocalPoller({
+      endpoints,
+      onReadings: (r) => batches.push(r),
+      onError: () => {},
+    });
+
+    await poller.start();
+    const temp = batches[0]!.find((r) => r.key === 'temp1f');
+    // gateway reports °F -> 72°F normalizes to (72-32)/1.8 = 22.22°C
+    expect(temp?.unit).toBe('°C');
+    expect(temp?.value).toBeCloseTo(22.22, 1);
+
+    poller.stop();
+  });
+
+  it('decodes channelized temps as Celsius (no conversion) when the gateway unit is "0"', async () => {
+    const endpoints = makeEndpoints({
+      sensors: async (): Promise<SensorInfo[]> => [
+        { id: 'W31', img: 'wh31', name: 'Temp CH1', signal: '4' },
+      ],
+      live: async (): Promise<RawLiveData> => ({
+        common_list: [{ id: '0x02', val: '20.0' }],
+        ch_aisle: [{ channel: '1', temp: '72.0', humidity: '48%', battery: '0' }],
+      }),
+      units: async (): Promise<Record<string, unknown>> => ({ temperature: '0' }),
+    });
+    const batches: Array<Array<{ key: string; value: number; unit: string }>> = [];
+    const poller = new LocalPoller({
+      endpoints,
+      onReadings: (r) => batches.push(r),
+      onError: () => {},
+    });
+
+    await poller.start();
+    const temp = batches[0]!.find((r) => r.key === 'temp1f');
+    // gateway reports °C -> 72 stays 72 (no Fahrenheit conversion)
+    expect(temp?.unit).toBe('C');
+    expect(temp?.value).toBeCloseTo(72.0, 1);
 
     poller.stop();
   });

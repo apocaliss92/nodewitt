@@ -23,6 +23,7 @@ const GATEWAY_KEYS = new Set(['tempinf', 'humidityin', 'baromabsin', 'baromrelin
 export interface PollerEndpoints {
   getLiveData(): Promise<RawLiveData>;
   getAllSensors(): Promise<SensorInfo[]>;
+  getUnits(): Promise<Record<string, unknown>>;
 }
 
 /** A decoded reading with its resolved owner (a hardware id, or `undefined` for gateway keys). */
@@ -42,6 +43,9 @@ export class LocalPoller {
   private readonly mapper = new SensorMapper();
   private scanTimer: ReturnType<typeof setInterval> | undefined;
   private mappingTimer: ReturnType<typeof setInterval> | undefined;
+  // Gateway temperature unit for channelized temps. Donor: get_units_info "temperature"
+  // (fallback "temp"); "0" -> Celsius, any other value -> Fahrenheit. Default 'C'.
+  private gatewayTempUnit = 'C';
 
   constructor(private readonly opts: LocalPollerOptions) {}
 
@@ -63,9 +67,12 @@ export class LocalPoller {
     this.mappingTimer = undefined;
   }
 
-  /** Re-read the sensor list and rebuild the live-key -> hardware-id mapping. Offline-tolerant. */
+  /** Re-read the gateway unit + sensor list and rebuild the live-key -> hardware-id mapping. Offline-tolerant. */
   private async refreshMapping(): Promise<void> {
     try {
+      const units = await this.opts.endpoints.getUnits();
+      const code = units['temperature'] ?? units['temp'];
+      this.gatewayTempUnit = String(code) === '0' ? 'C' : 'F';
       const sensors = await this.opts.endpoints.getAllSensors();
       this.mapper.updateMapping(sensors);
     } catch (error) {
@@ -77,7 +84,7 @@ export class LocalPoller {
   private async poll(): Promise<void> {
     try {
       const raw = await this.opts.endpoints.getLiveData();
-      const decoded = decodeLiveData(raw, this.mapper);
+      const decoded = decodeLiveData(raw, this.mapper, {}, this.gatewayTempUnit);
       const resolved: ResolvedReading[] = decoded.map((reading) => ({
         ...reading,
         hardwareId: GATEWAY_KEYS.has(reading.key)
