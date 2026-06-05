@@ -173,4 +173,35 @@ describe('decodePushForm — batteries', () => {
     const { readings } = decodePushForm({ PASSKEY: 'X', soilbatt1: 'NaNish' });
     expect(readings.find((r) => r.key === 'soilbatt1')).toBeUndefined();
   });
+
+  it('classifies wh57batt as a 0-5 bar battery (was wrongly binary -> "3" dropped)', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', wh57batt: '3' });
+    expect(readings.find((r) => r.key === 'wh57batt')?.battery).toBe(60);
+  });
+
+  it('classifies co2_batt (WH45) as a 0-5 bar battery (was unmatched -> ignored)', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', co2_batt: '4' });
+    expect(readings.find((r) => r.key === 'co2_batt')?.battery).toBe(80);
+  });
+
+  it('classifies batt1..batt8 (WH31) as binary, not bar (was 0->0 / 1->20 wrong %)', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', batt1: '1', batt3: '0' });
+    const by = (k: string) => readings.find((r) => r.key === k);
+    expect(by('batt1')?.battery).toBe(10);
+    expect(by('batt3')?.battery).toBe(100);
+  });
+
+  it('emits wh68batt / wh80batt as raw voltage readings (was binary -> floats dropped)', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', wh68batt: '1.48', wh80batt: '2.6' });
+    const wh68 = readings.find((r) => r.key === 'wh68batt');
+    const wh80 = readings.find((r) => r.key === 'wh80batt');
+    // The WH68/WH80 voltage window differs from WH90 and is not documented, so we surface the
+    // raw volts rather than fabricate a percentage. No battery percent is attached.
+    expect(wh68?.value).toBeCloseTo(1.48, 2);
+    expect(wh68?.unit).toBe('V');
+    expect(wh68?.battery).toBeUndefined();
+    expect(wh80?.value).toBeCloseTo(2.6, 2);
+    expect(wh80?.unit).toBe('V');
+    expect(wh80?.battery).toBeUndefined();
+  });
 });

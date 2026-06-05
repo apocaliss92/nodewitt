@@ -106,6 +106,10 @@ const SCALAR_FIELDS: Record<string, string> = {
   lightning_time: '',
   // WS90 super-capacitor voltage — a raw voltage reading, NOT a battery percent.
   ws90cap_volt: 'V',
+  // WH68/WH80 report a raw battery VOLTAGE. Their volt->percent window is undocumented and differs
+  // from WH90, so we surface the raw volts rather than fabricate a (wrong) percentage.
+  wh68batt: 'V',
+  wh80batt: 'V',
   // CO2/AQ scalar parts (WH45) — channel-less
   co2: '',
   co2_24h: '',
@@ -162,28 +166,32 @@ interface BatteryMatch {
   readonly channel?: number;
 }
 
-// Whole-station binary batteries (0 = full, 1 = low).
-const BINARY_BATT = new Set([
-  'wh25batt',
-  'wh26batt',
-  'wh40batt',
-  'wh57batt',
-  'wh65batt',
-  'wh68batt',
-  'wh80batt',
-]);
+// Whole-station binary batteries (0 = full, 1 = low). Encodings confirmed against pyecowitt's
+// `sensor_map.py` (`stype`): wh25/wh26/wh65 = binary.
+const BINARY_BATT = new Set(['wh25batt', 'wh26batt', 'wh40batt', 'wh65batt']);
 
-// Channelized 0-5 "bar" batteries (percent = level * 20).
-const BAR_BATT_CHANNEL = /^(?:soilbatt|pm25batt|leakbatt|tf_batt|batt)(\d)$/;
+// Whole-station 0-5 "bar" batteries (percent = level * 20). wh57 (WH57 lightning) and co2_batt
+// (WH45 CO2/AQ) report a 0-5 bar level — `battery_percentage` in sensor_map.py — NOT a binary flag.
+const BAR_BATT = new Set(['wh57batt', 'co2_batt']);
+
+// Channelized 0-5 "bar" batteries (percent = level * 20): soil/pm25/leak/soil-temp packs.
+const BAR_BATT_CHANNEL = /^(?:soilbatt|pm25batt|leakbatt|tf_batt)(\d)$/;
+
+// Channelized WH31 extra T/H batteries — BINARY (0 -> 100%, 1 -> 10%), not bar.
+const BINARY_BATT_CHANNEL = /^batt(\d)$/;
 
 /** Classify a battery field, or undefined when the key is not a battery. */
 function classifyBattery(key: string): BatteryMatch | undefined {
   if (BINARY_BATT.has(key)) return { kind: 'binary' };
-  // `ws90cap_volt` is intentionally NOT here: it is a raw capacitor voltage (emitted via the
-  // scalar table with unit "V"), not a battery percent. Only `wh90batt` is a voltage battery.
+  if (BAR_BATT.has(key)) return { kind: 'bar' };
+  // `ws90cap_volt` and `wh68batt`/`wh80batt` are intentionally NOT here: they are raw voltages
+  // (emitted via the scalar table with unit "V"), not battery percents. Only `wh90batt` decodes to
+  // a percent via the known 2.4-3.0 V window.
   if (key === 'wh90batt') return { kind: 'voltage' };
-  const m = BAR_BATT_CHANNEL.exec(key);
-  if (m !== null && m[1] !== undefined) return { kind: 'bar', channel: Number(m[1]) };
+  const bar = BAR_BATT_CHANNEL.exec(key);
+  if (bar !== null && bar[1] !== undefined) return { kind: 'bar', channel: Number(bar[1]) };
+  const bin = BINARY_BATT_CHANNEL.exec(key);
+  if (bin !== null && bin[1] !== undefined) return { kind: 'binary', channel: Number(bin[1]) };
   return undefined;
 }
 
