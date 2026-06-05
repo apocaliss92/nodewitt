@@ -95,3 +95,37 @@ describe('decodePushForm — per-channel measurements', () => {
     expect(by('leak_ch1')?.channel).toBe(1);
   });
 });
+
+describe('decodePushForm — lightning', () => {
+  it('decodes lightning count + distance and tolerates lightning_time', () => {
+    const { readings } = decodePushForm({
+      PASSKEY: 'X',
+      lightning_num: '3',
+      lightning: '12',
+      lightning_time: '1717581600',
+    });
+    const by = (k: string) => readings.find((r) => r.key === k);
+    expect(by('lightning_num')?.value).toBe(3);
+    expect(by('lightning')?.value).toBe(12);
+    expect(by('lightning')?.unit).toBe('km');
+    // lightning_time is an epoch, captured but not a numeric SI reading we assert units on
+    expect(by('lightning_time')).toBeDefined();
+  });
+
+  it('does not crash on an empty lightning distance', () => {
+    const { readings } = decodePushForm({ PASSKEY: 'X', lightning: '', lightning_num: '0' });
+    expect(readings.find((r) => r.key === 'lightning')).toBeUndefined();
+    expect(readings.find((r) => r.key === 'lightning_num')?.value).toBe(0);
+  });
+
+  it('tolerates a non-numeric lightning_time without crashing', () => {
+    const { readings } = decodePushForm({
+      PASSKEY: 'X',
+      lightning_num: '1',
+      lightning_time: 'never',
+    });
+    // a non-numeric timestamp is skipped, not emitted, and does not throw
+    expect(readings.find((r) => r.key === 'lightning_time')).toBeUndefined();
+    expect(readings.find((r) => r.key === 'lightning_num')?.value).toBe(1);
+  });
+});

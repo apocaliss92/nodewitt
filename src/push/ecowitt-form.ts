@@ -100,6 +100,10 @@ const SCALAR_FIELDS: Record<string, string> = {
   wrain_piezo: 'in',
   mrain_piezo: 'in',
   yrain_piezo: 'in',
+  // lightning (WH57)
+  lightning_num: '',
+  lightning: 'km',
+  lightning_time: '',
   // CO2/AQ scalar parts (WH45) — channel-less
   co2: '',
   co2_24h: '',
