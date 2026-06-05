@@ -13,7 +13,7 @@
 import { liveDataKeysForModel } from '../protocol/sensor-models.js';
 import type { SensorInfo as RawSensorInfo } from './endpoints.js';
 
-const DEAD_IDS = new Set(['FFFFFFFF', 'FFFFFFFE']);
+const DEAD_IDS = new Set(['FFFFFFFF', 'FFFFFFFE', '00000000']);
 const CHANNEL_RE = /CH(\d+)/;
 
 export interface MappedSensor {
