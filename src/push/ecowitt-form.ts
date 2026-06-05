@@ -61,14 +61,80 @@ const METADATA_KEYS = new Set([
   'interval',
 ]);
 
+/**
+ * Scalar (non-channel) measurement fields → the unit token fed to `parseValue`.
+ *
+ * `parseValue('{val}', unit)` strips/normalizes; e.g. unit "F" -> °C, "mph" -> m/s, "inhg" -> hPa,
+ * "in" -> mm, "in/hr" -> mm/Hr (these tokens are already in P1's CONVERSIONS). Dimensionless fields
+ * use a plain unit string ("%", "W/m²", "", "deg") that parseValue passes through unchanged.
+ */
+const SCALAR_FIELDS: Record<string, string> = {
+  // indoor (WH25 / gateway)
+  tempinf: 'F',
+  humidityin: '%',
+  baromrelin: 'inhg',
+  baromabsin: 'inhg',
+  // outdoor (WH65 / WS array)
+  tempf: 'F',
+  humidity: '%',
+  winddir: 'deg',
+  windspeedmph: 'mph',
+  windgustmph: 'mph',
+  maxdailygust: 'mph',
+  solarradiation: 'W/m²',
+  uv: '',
+  // rain — tipping bucket
+  rainratein: 'in/hr',
+  eventrainin: 'in',
+  hourlyrainin: 'in',
+  dailyrainin: 'in',
+  weeklyrainin: 'in',
+  monthlyrainin: 'in',
+  yearlyrainin: 'in',
+  totalrainin: 'in',
+  // rain — piezo
+  rrain_piezo: 'in/hr',
+  erain_piezo: 'in',
+  hrain_piezo: 'in',
+  drain_piezo: 'in',
+  wrain_piezo: 'in',
+  mrain_piezo: 'in',
+  yrain_piezo: 'in',
+  // CO2/AQ scalar parts (WH45) — channel-less
+  co2: '',
+  co2_24h: '',
+  humi_co2: '%',
+  tf_co2: 'F',
+  pm25_co2: 'µg/m³',
+  pm10_co2: 'µg/m³',
+};
+
+/** Build a reading from a raw value via P1 parseValue; returns undefined for empty/non-numeric. */
+function makeScalarReading(key: string, raw: string, unitToken: string): PushReading | undefined {
+  if (raw.trim() === '') return undefined;
+  try {
+    const parsed = parseValue({ val: raw, unit: unitToken });
+    return { key, value: parsed.value, unit: parsed.unit, raw };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Decode a flat push form map into station metadata + unified readings. Tolerates unknown keys. */
 export function decodePushForm(form: Readonly<Record<string, string>>): PushDecodeResult {
   const readings: PushReading[] = [];
-  // Placeholder body filled in by later tasks; for now only metadata is split out.
   for (const [key, value] of Object.entries(form)) {
     if (METADATA_KEYS.has(key)) continue;
-    // Known measurement / battery decoding is added in Tasks 3.2-3.5; unknown keys are ignored.
-    void value;
+
+    const scalarUnit = Object.prototype.hasOwnProperty.call(SCALAR_FIELDS, key)
+      ? SCALAR_FIELDS[key]
+      : undefined;
+    if (scalarUnit !== undefined) {
+      const reading = makeScalarReading(key, value, scalarUnit);
+      if (reading !== undefined) readings.push(reading);
+      continue;
+    }
+    // channel + battery decoding added in Tasks 3.3-3.5; unknown keys ignored.
   }
 
   const station: PushStationInfo = {
@@ -85,5 +151,5 @@ export function decodePushForm(form: Readonly<Record<string, string>>): PushDeco
   };
 }
 
-// Re-exported for the measurement tables added next; keeps the imports "used" until then.
-export { parseValue, decodeBarBattery, decodeBinaryBattery, decodeVoltageBattery };
+// Re-exported temporarily to keep the battery imports referenced until Task 3.5 consumes them.
+export { decodeBarBattery, decodeBinaryBattery, decodeVoltageBattery };

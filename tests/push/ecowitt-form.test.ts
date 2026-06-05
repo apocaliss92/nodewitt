@@ -23,3 +23,43 @@ describe('decodePushForm — metadata + tolerance', () => {
     expect(result.passkey).toBe('X');
   });
 });
+
+describe('decodePushForm — scalar measurements (imperial -> SI)', () => {
+  it('decodes indoor/outdoor/wind/rain/solar fields into SI', () => {
+    const { readings } = decodePushForm({
+      PASSKEY: 'X',
+      tempinf: '71.6',
+      humidityin: '48',
+      baromrelin: '29.92',
+      baromabsin: '29.50',
+      tempf: '50.0',
+      humidity: '82',
+      winddir: '210',
+      windspeedmph: '5.0',
+      windgustmph: '8.0',
+      maxdailygust: '12.0',
+      rainratein: '0.04',
+      dailyrainin: '0.10',
+      solarradiation: '450.3',
+      uv: '4',
+    });
+    const by = (k: string) => readings.find((r) => r.key === k);
+
+    expect(by('tempinf')?.value).toBeCloseTo(22.0, 1);
+    expect(by('tempinf')?.unit).toBe('°C');
+    expect(by('humidityin')?.value).toBe(48);
+    expect(by('humidityin')?.unit).toBe('%');
+    expect(by('baromrelin')?.value).toBeCloseTo(1013.21, 1);
+    expect(by('baromrelin')?.unit).toBe('hPa');
+    expect(by('tempf')?.value).toBeCloseTo(10.0, 1);
+    expect(by('humidity')?.value).toBe(82);
+    expect(by('winddir')?.value).toBe(210);
+    expect(by('windspeedmph')?.value).toBeCloseTo(2.235, 2);
+    expect(by('windspeedmph')?.unit).toBe('m/s');
+    expect(by('maxdailygust')?.unit).toBe('m/s');
+    expect(by('rainratein')?.value).toBeCloseTo(1.016, 2);
+    expect(by('dailyrainin')?.value).toBeCloseTo(2.54, 2);
+    expect(by('solarradiation')?.value).toBeCloseTo(450.3, 1);
+    expect(by('uv')?.value).toBe(4);
+  });
+});
