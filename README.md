@@ -10,6 +10,13 @@ Node.js/TypeScript client for Ecowitt weather stations — local poll + push, on
 npm install nodewitt
 ```
 
+## Transports
+
+Two transports are implemented: the local-poll client and the HTTP push listener (an internal
+`node:http` server that receives the gateway's "Customized" `x-www-form-urlencoded` uploads and
+decodes them into the same SI-normalized readings). The push listener is wired into the public
+facade in the next phase.
+
 ## Acknowledgments
 
 The local-poll layer ports [alexlenk/ecowitt_local](https://github.com/alexlenk/ecowitt_local) (MIT).
