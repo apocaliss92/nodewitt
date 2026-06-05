@@ -55,7 +55,10 @@ export class LocalPoller {
    * facade/`Station` share the SAME mapper the poller refreshes — no duplicate `getAllSensors`
    * fetch and no model/channel/signal drift. The mapper is primed on `start()`/`refreshMapping`.
    */
-  getMapper(): { getSensorInfo(hardwareId: string): MappedSensor | undefined } {
+  getMapper(): {
+    getSensorInfo(hardwareId: string): MappedSensor | undefined;
+    getSensorInfoForKey(liveKey: string): MappedSensor | undefined;
+  } {
     return this.mapper;
   }
 

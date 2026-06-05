@@ -81,4 +81,36 @@ describe('SensorMapper', () => {
     expect(m.getAllHardwareIds()).toEqual(['MYSTERY']);
     expect(m.getHardwareId('temp1f')).toBeUndefined();
   });
+
+  it('resolves per-key sensor info when two sensors share a short hardware id', () => {
+    // Real GW1100A: a WH69 7-in-1 array and a WH31 CH1 both report the short id "8E".
+    // The two key sets are disjoint (0x02 vs temp1f), so info must resolve per live key.
+    const m = new SensorMapper();
+    m.updateMapping([
+      { id: '8E', img: 'wh69', name: 'Solar & Wind & Rain', signal: '4' },
+      { id: '8E', img: 'wh31', name: 'Temp & Humidity CH1', signal: '4' },
+    ]);
+    // 0x02 (WH69 outdoor temp) must report wh69, no channel.
+    const wh69 = m.getSensorInfoForKey('0x02');
+    expect(wh69?.model).toBe('wh69');
+    expect(wh69?.channel).toBeUndefined();
+    // temp1f (WH31 CH1) must report wh31, channel 1.
+    const wh31 = m.getSensorInfoForKey('temp1f');
+    expect(wh31?.model).toBe('wh31');
+    expect(wh31?.channel).toBe(1);
+    // Both keys still resolve to the shared raw hardware id for fidelity.
+    expect(m.getHardwareId('0x02')).toBe('8E');
+    expect(m.getHardwareId('temp1f')).toBe('8E');
+  });
+
+  it('getSensorInfoForKey honors signal-wins on a shared live key', () => {
+    const m = new SensorMapper();
+    m.updateMapping([
+      { id: 'STALE0', img: 'wh69', name: 'Solar & Wind', signal: '0' },
+      { id: 'ACTIVE9', img: 'wh90', name: 'Solar & Wind & Rain', signal: '4' },
+    ]);
+    // 0x02 is claimed by both; the stronger-signal wh90 wins the key info too.
+    expect(m.getSensorInfoForKey('0x02')?.hardwareId).toBe('ACTIVE9');
+    expect(m.getSensorInfoForKey('0x02')?.model).toBe('wh90');
+  });
 });

@@ -3,7 +3,7 @@ import { Station } from '../../src/model/station.js';
 import { decodePushForm } from '../../src/push/ecowitt-form.js';
 import type { ResolvedReading } from '../../src/local/poller.js';
 
-const lookup = { getSensorInfo: () => undefined };
+const lookup = { getSensorInfo: () => undefined, getSensorInfoForKey: () => undefined };
 
 describe('Station.getStation snapshot', () => {
   it('exposes an immutable snapshot with a sensors array and a count', () => {

@@ -17,9 +17,16 @@ import type { ResolvedReading } from '../local/poller.js';
 import type { MappedSensor } from '../local/sensor-mapper.js';
 import type { PushDecodeResult } from '../push/ecowitt-form.js';
 
-/** Read-only seam the station needs from the SensorMapper (model/channel/signal for an id). */
+/**
+ * Read-only seam the station needs from the SensorMapper (model/channel/signal for a reading).
+ *
+ * `getSensorInfoForKey` resolves per live key, which is correct even when two physical sensors
+ * share the same gateway short hardware id; `getSensorInfo` (per raw id) is the fallback for
+ * force-attributed readings whose key is not registered to any model's key set.
+ */
 export interface SensorInfoLookup {
   getSensorInfo(hardwareId: string): MappedSensor | undefined;
+  getSensorInfoForKey(liveKey: string): MappedSensor | undefined;
 }
 
 const GATEWAY_OWNER = 'gateway';
@@ -50,7 +57,11 @@ export class Station {
       const cls = classifyKey(r.key);
       if (cls.kind !== 'measurement') continue;
       const owner = r.hardwareId;
-      const info = owner !== undefined ? lookup.getSensorInfo(owner) : undefined;
+      // Resolve sensor info per live KEY (correct under shared short hardware ids); fall back to
+      // the per-owner lookup for force-attributed readings whose key isn't in a model's key set.
+      const info =
+        lookup.getSensorInfoForKey(r.key) ??
+        (owner !== undefined ? lookup.getSensorInfo(owner) : undefined);
       const id = `${owner ?? GATEWAY_OWNER}:${r.key}`;
       const signal = signalToNumber(info?.signal);
       this.upsert(

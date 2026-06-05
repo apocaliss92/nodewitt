@@ -28,7 +28,13 @@ function fakePollerFactory(): {
       const handle = {
         start: vi.fn(async () => {}),
         stop: vi.fn(async () => {}),
-        lookup: { getSensorInfo: (id: string): MappedSensor | undefined => info[id] },
+        lookup: {
+          getSensorInfo: (id: string): MappedSensor | undefined => info[id],
+          getSensorInfoForKey: (key: string): MappedSensor | undefined =>
+            key.startsWith('temp') || key.startsWith('humidity') || key.startsWith('batt')
+              ? info['HID']
+              : undefined,
+        },
       };
       state.built = handle;
       return handle;

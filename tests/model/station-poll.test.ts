@@ -6,7 +6,11 @@ import type { MappedSensor } from '../../src/local/sensor-mapper.js';
 const info: Record<string, MappedSensor> = {
   AABBCC: { hardwareId: 'AABBCC', model: 'wh31', channel: 1, battery: '0', signal: '4' },
 };
-const lookup = { getSensorInfo: (id: string): MappedSensor | undefined => info[id] };
+const lookup = {
+  getSensorInfo: (id: string): MappedSensor | undefined => info[id],
+  getSensorInfoForKey: (key: string): MappedSensor | undefined =>
+    key === 'temp1f' || key === 'humidity1' ? info['AABBCC'] : undefined,
+};
 
 function poll(
   over: Partial<ResolvedReading> & Pick<ResolvedReading, 'key' | 'value' | 'unit' | 'raw'>,
@@ -103,6 +107,42 @@ describe('Station.ingestPollReadings', () => {
     expect(temps).toHaveLength(1);
     expect(temps[0]?.value).toBe(21);
     expect(changed).toHaveLength(1); // value changed → one change emitted
+  });
+
+  it('labels each reading per its live key when two sensors share a hardware id (8E collision)', () => {
+    // Real GW1100A: a WH69 array and a WH31 CH1 both report the short id "8E".
+    const shared: Record<string, MappedSensor> = {
+      '8E_wh69': { hardwareId: '8E', model: 'wh69', channel: undefined, battery: '', signal: '4' },
+      '8E_wh31': { hardwareId: '8E', model: 'wh31', channel: 1, battery: '0', signal: '4' },
+    };
+    const collidingLookup = {
+      // Per-id resolution collides (last write wins -> wh31), as the real mapper would.
+      getSensorInfo: (id: string): MappedSensor | undefined =>
+        id === '8E' ? shared['8E_wh31'] : undefined,
+      // Per-key resolution is correct: 0x02 belongs to wh69, temp1f to wh31.
+      getSensorInfoForKey: (key: string): MappedSensor | undefined =>
+        key === '0x02' ? shared['8E_wh69'] : key === 'temp1f' ? shared['8E_wh31'] : undefined,
+    };
+    const station = new Station();
+    station.ingestPollReadings(
+      [
+        poll({ key: '0x02', value: 20, unit: '°C', raw: '68 F', hardwareId: '8E' }),
+        poll({ key: 'temp1f', value: 21, unit: '°C', raw: '69.8 F', hardwareId: '8E' }),
+      ],
+      collidingLookup,
+      1000,
+    );
+    const sensors = station.getSensors();
+    const outdoor = sensors.find((s) => s.id === '8E:0x02');
+    const indoorCh1 = sensors.find((s) => s.id === '8E:temp1f');
+    // WH69 outdoor reading must NOT be mislabeled as wh31.
+    expect(outdoor?.model).toBe('wh69');
+    expect(outdoor?.channel).toBeUndefined();
+    expect(outdoor?.hardwareId).toBe('8E');
+    // WH31 CH1 reading keeps its correct model + channel.
+    expect(indoorCh1?.model).toBe('wh31');
+    expect(indoorCh1?.channel).toBe(1);
+    expect(indoorCh1?.hardwareId).toBe('8E');
   });
 
   it('does not report a change when the value is identical', () => {

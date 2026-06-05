@@ -38,11 +38,18 @@ export class SensorMapper {
   private hardwareByKey = new Map<string, string>();
   private signalByKey = new Map<string, number>();
   private infoById = new Map<string, MappedSensor>();
+  // Per-live-key sensor info. Unlike `infoById` (keyed by the gateway's short hardware id, which
+  // is NOT unique — a GW1100A can report the same id for two physical sensors), this is keyed by
+  // the live-data key the sensor owns. Because the per-model key sets are disjoint across the
+  // colliding sensors, this resolves each reading to the CORRECT sensor info, while `infoById`
+  // would lose one of the two to last-write-wins.
+  private infoByKey = new Map<string, MappedSensor>();
 
   updateMapping(sensors: ReadonlyArray<RawSensorInfo>): void {
     this.hardwareByKey = new Map();
     this.signalByKey = new Map();
     this.infoById = new Map();
+    this.infoByKey = new Map();
 
     for (const sensor of sensors) {
       const hardwareId = sensor.id.trim();
@@ -52,19 +59,24 @@ export class SensorMapper {
       const channel = extractChannel(sensor.name ?? '');
       const signal = parseSignal(sensor.signal);
 
-      this.infoById.set(hardwareId, {
+      const info: MappedSensor = {
         hardwareId,
         model,
         channel,
         battery: String(sensor.batt ?? ''),
         signal: String(sensor.signal ?? ''),
-      });
+      };
+      this.infoById.set(hardwareId, info);
 
       for (const key of liveDataKeysForModel(model, channel)) {
         const existing = this.signalByKey.get(key);
         if (existing === undefined || signal >= existing) {
           this.hardwareByKey.set(key, hardwareId);
           this.signalByKey.set(key, signal);
+          // Associate THIS sensor's info with each of its keys, under the same signal-wins
+          // policy as `hardwareByKey`, so a per-key lookup yields the owning sensor's model/
+          // channel/signal even when two sensors share the raw hardware id.
+          this.infoByKey.set(key, info);
         }
       }
     }
@@ -76,6 +88,14 @@ export class SensorMapper {
 
   getSensorInfo(hardwareId: string): MappedSensor | undefined {
     return this.infoById.get(hardwareId);
+  }
+
+  /**
+   * Sensor info for the sensor that OWNS `liveKey`. Resolves correctly even when two physical
+   * sensors share the same gateway short hardware id, because their live-key sets are disjoint.
+   */
+  getSensorInfoForKey(liveKey: string): MappedSensor | undefined {
+    return this.infoByKey.get(liveKey);
   }
 
   getAllHardwareIds(): string[] {

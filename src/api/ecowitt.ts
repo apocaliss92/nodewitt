@@ -101,7 +101,10 @@ export class Ecowitt {
    * from outside the class; the exported test seam `__createLocalWith` re-exports it (bound) below.
    */
   static #buildLocal(build: (opts: LocalBuildOptions) => LocalTransport): Ecowitt {
-    let lookup: SensorInfoLookup = { getSensorInfo: () => undefined };
+    let lookup: SensorInfoLookup = {
+      getSensorInfo: () => undefined,
+      getSensorInfoForKey: () => undefined,
+    };
     return new Ecowitt((self) => {
       const transport = build({
         onReadings: (readings) => self.#acceptPoll(readings, lookup),
