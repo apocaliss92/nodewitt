@@ -1,6 +1,6 @@
 {
   "name": "nodewitt",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Node.js/TypeScript client for Ecowitt weather stations (local poll + push)",
   "license": "MIT",
   "author": "apocaliss92",
