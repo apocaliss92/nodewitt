@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import type { HttpClient } from './http-client.js';
+import type { RawLiveData } from './livedata.js';
 
 // --- Endpoint paths (const.py API_*) ---
 const PATH = {
@@ -35,8 +36,32 @@ const liveDataItemSchema = z
   .object({ id: z.string().optional(), val: z.union([z.string(), z.number()]).optional() })
   .passthrough();
 
+/** A free-form gateway sub-array item — the decoder reads its fields via cast-free narrowing. */
+const subArraySchema = z.array(z.record(z.unknown()));
+
+/**
+ * Live-data envelope. `common_list` is the required core array (the donor raises without it);
+ * the remaining sub-arrays the decoder consumes are declared optional so the inferred type is
+ * structurally a `RawLiveData` (the decoder's input contract). Still `passthrough()` — the
+ * gateway may add fields freely and they survive untouched.
+ */
 const liveDataSchema = z
-  .object({ common_list: z.array(liveDataItemSchema).optional() })
+  .object({
+    common_list: z.array(liveDataItemSchema).optional(),
+    rain: subArraySchema.optional(),
+    piezoRain: subArraySchema.optional(),
+    lightning: subArraySchema.optional(),
+    wh25: subArraySchema.optional(),
+    ch_soil: subArraySchema.optional(),
+    ch_ec: subArraySchema.optional(),
+    ch_aisle: subArraySchema.optional(),
+    ch_temp: subArraySchema.optional(),
+    ch_pm25: subArraySchema.optional(),
+    ch_leaf: subArraySchema.optional(),
+    ch_leak: subArraySchema.optional(),
+    ch_lds: subArraySchema.optional(),
+    co2: subArraySchema.optional(),
+  })
   .passthrough();
 
 const sensorSchema = z
@@ -78,7 +103,7 @@ export class Endpoints {
     };
   }
 
-  async getLiveData(): Promise<LiveData> {
+  async getLiveData(): Promise<RawLiveData> {
     const raw = await this.http.getJson(PATH.liveData);
     const data = liveDataSchema.parse(raw);
     if (data.common_list === undefined) {

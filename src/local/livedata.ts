@@ -41,22 +41,28 @@ export interface LiveReading {
 
 type Item = Record<string, unknown>;
 
-/** Lenient input shape — already Zod-validated upstream as passthrough records. */
+/**
+ * Lenient input shape — already Zod-validated upstream as passthrough records.
+ *
+ * Each sub-array is `?: ... | undefined` (not bare `?`) so a Zod-inferred `.optional()`
+ * envelope from `Endpoints.getLiveData()` is assignable under `exactOptionalPropertyTypes`;
+ * every decoder branch guards on presence (`if (raw.x)`), so an `undefined` sub-array is a no-op.
+ */
 export interface RawLiveData {
-  readonly common_list?: ReadonlyArray<Item>;
-  readonly rain?: ReadonlyArray<Item>;
-  readonly piezoRain?: ReadonlyArray<Item>;
-  readonly lightning?: ReadonlyArray<Item>;
-  readonly wh25?: ReadonlyArray<Item>;
-  readonly ch_soil?: ReadonlyArray<Item>;
-  readonly ch_ec?: ReadonlyArray<Item>;
-  readonly ch_aisle?: ReadonlyArray<Item>;
-  readonly ch_temp?: ReadonlyArray<Item>;
-  readonly ch_pm25?: ReadonlyArray<Item>;
-  readonly ch_leaf?: ReadonlyArray<Item>;
-  readonly ch_leak?: ReadonlyArray<Item>;
-  readonly ch_lds?: ReadonlyArray<Item>;
-  readonly co2?: ReadonlyArray<Item>;
+  readonly common_list?: ReadonlyArray<Item> | undefined;
+  readonly rain?: ReadonlyArray<Item> | undefined;
+  readonly piezoRain?: ReadonlyArray<Item> | undefined;
+  readonly lightning?: ReadonlyArray<Item> | undefined;
+  readonly wh25?: ReadonlyArray<Item> | undefined;
+  readonly ch_soil?: ReadonlyArray<Item> | undefined;
+  readonly ch_ec?: ReadonlyArray<Item> | undefined;
+  readonly ch_aisle?: ReadonlyArray<Item> | undefined;
+  readonly ch_temp?: ReadonlyArray<Item> | undefined;
+  readonly ch_pm25?: ReadonlyArray<Item> | undefined;
+  readonly ch_leaf?: ReadonlyArray<Item> | undefined;
+  readonly ch_leak?: ReadonlyArray<Item> | undefined;
+  readonly ch_lds?: ReadonlyArray<Item> | undefined;
+  readonly co2?: ReadonlyArray<Item> | undefined;
 }
 
 /** Optional enrichment the poller fetches from `/get_cli_*` (donor inline soilad/lds). */
