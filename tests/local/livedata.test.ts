@@ -27,6 +27,27 @@ describe('decodeLiveData', () => {
     expect(byKey(readings, 'wh26batt')?.value).toBe(100);
   });
 
+  it('does NOT emit the WH26 battery from 0x03 when wh26batt is not mapped (donor guard)', () => {
+    const readings = decodeLiveData(
+      {
+        common_list: [{ id: '0x03', val: '12.0', battery: '0' }],
+      },
+      mapper({}), // no wh26batt mapping
+    );
+    expect(byKey(readings, 'wh26batt')).toBeUndefined();
+  });
+
+  it('emits the WH26 battery from 0x03 when wh26batt IS mapped', () => {
+    const readings = decodeLiveData(
+      {
+        common_list: [{ id: '0x03', val: '12.0', battery: '1' }],
+      },
+      mapper({ wh26batt: 'AABBCC' }),
+    );
+    // binary "1" -> 10%
+    expect(byKey(readings, 'wh26batt')?.value).toBe(10);
+  });
+
   it('forces the rain-array items onto the tipping-bucket hardware id and decodes 0x13 battery', () => {
     const readings = decodeLiveData(
       {

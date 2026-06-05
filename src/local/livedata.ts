@@ -78,14 +78,19 @@ function push(out: LiveReading[], reading: LiveReading | undefined): void {
 }
 
 /** common_list: pass items through by hex id; WH26 battery embedded in the 0x03 (dewpoint) item. */
-function decodeCommonList(items: ReadonlyArray<Item>, out: LiveReading[]): void {
+function decodeCommonList(
+  items: ReadonlyArray<Item>,
+  mapper: HardwareLookup,
+  out: LiveReading[],
+): void {
   for (const item of items) {
     const id = str(item, 'id');
     const val = str(item, 'val');
     const unit = str(item, 'unit');
     if (id && val !== undefined) push(out, makeReading(id, val, unit));
     // WH26/WN32 embeds a binary battery in the 0x03 item: "0" -> 100%, else 10%.
-    if (id === '0x03') {
+    // The donor only emits it when a WH26 sensor is actually mapped (wh26batt resolves).
+    if (id === '0x03' && mapper.getHardwareId('wh26batt') !== undefined) {
       const battery = str(item, 'battery');
       if (battery !== undefined) {
         push(out, makeReading('wh26batt', battery === '0' ? '100' : '10'));
@@ -240,7 +245,7 @@ export function decodeLiveData(
 ): LiveReading[] {
   const out: LiveReading[] = [];
 
-  if (raw.common_list) decodeCommonList(raw.common_list, out);
+  if (raw.common_list) decodeCommonList(raw.common_list, mapper, out);
   if (raw.rain) decodeRain(raw.rain, mapper, out);
   if (raw.lightning) decodeLightning(raw.lightning, out);
   if (raw.ch_soil) decodeChSoil(raw.ch_soil, out);
