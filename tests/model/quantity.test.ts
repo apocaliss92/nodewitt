@@ -7,6 +7,11 @@ describe('classifyKey', () => {
     expect(classifyKey('0x0E')).toEqual({ kind: 'measurement', quantity: 'precipitation_rate' });
   });
 
+  it('classifies the decimal-id Feels Like ("3") and VPD ("5") common_list keys', () => {
+    expect(classifyKey('3')).toEqual({ kind: 'measurement', quantity: 'temperature' });
+    expect(classifyKey('5')).toEqual({ kind: 'measurement', quantity: 'vpd' });
+  });
+
   it('classifies named scalar/channel measurement keys', () => {
     expect(classifyKey('tempf')).toEqual({ kind: 'measurement', quantity: 'temperature' });
     expect(classifyKey('humidity3')).toEqual({ kind: 'measurement', quantity: 'humidity' });

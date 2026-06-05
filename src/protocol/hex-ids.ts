@@ -19,7 +19,8 @@ export type Quantity =
   | 'precipitation'
   | 'precipitation_rate'
   | 'lightning_distance'
-  | 'lightning_count';
+  | 'lightning_count'
+  | 'vpd';
 
 export interface HexIdInfo {
   readonly name: string;
@@ -39,6 +40,9 @@ const HEX_ID_TABLE = {
   '0x04': { name: 'Wind Chill', quantity: 'temperature', defaultUnit: '°C' },
   '0x05': { name: 'Heat Index', quantity: 'temperature', defaultUnit: '°C' },
   '0x07': { name: 'Outdoor Humidity', quantity: 'humidity', defaultUnit: '%' },
+  // Decimal-string ids (WH69 7-in-1): emitted alongside the hex ids; distinct from 0x03/0x05.
+  '3': { name: 'Feels Like', quantity: 'temperature', defaultUnit: '°C' },
+  '5': { name: 'VPD', quantity: 'vpd', defaultUnit: 'kPa' },
   '0x0B': { name: 'Wind Speed', quantity: 'wind_speed', defaultUnit: 'm/s' },
   '0x0C': { name: 'Wind Gust', quantity: 'wind_speed', defaultUnit: 'm/s' },
   '0x19': { name: 'Max Daily Gust', quantity: 'wind_speed', defaultUnit: 'm/s' },

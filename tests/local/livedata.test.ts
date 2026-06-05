@@ -27,6 +27,25 @@ describe('decodeLiveData', () => {
     expect(byKey(readings, 'wh26batt')?.value).toBe(100);
   });
 
+  it('decodes the decimal-id common_list Feels Like ("3") and VPD ("5") keys', () => {
+    const readings = decodeLiveData(
+      {
+        common_list: [
+          { id: '3', val: '17.3', unit: 'C' },
+          { id: '5', val: '0.533 kPa' },
+          { id: '0x03', val: '12.0' }, // regression: hex Dewpoint still decodes alongside "3"
+        ],
+      },
+      mapper({}),
+    );
+    expect(byKey(readings, '3')?.value).toBeCloseTo(17.3);
+    const vpd = byKey(readings, '5');
+    expect(vpd?.value).toBeCloseTo(0.533);
+    expect(vpd?.unit).toBe('kPa'); // kPa passes through, not force-converted
+    // regression: hex 0x03 Dewpoint is a distinct reading, not shadowed by "3"
+    expect(byKey(readings, '0x03')?.value).toBeCloseTo(12.0);
+  });
+
   it('does NOT emit the WH26 battery from 0x03 when wh26batt is not mapped (donor guard)', () => {
     const readings = decodeLiveData(
       {

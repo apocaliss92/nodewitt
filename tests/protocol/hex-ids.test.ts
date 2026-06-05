@@ -46,6 +46,26 @@ describe('hex-id measurement table', () => {
     expect(lookupHexId('0xA2')?.name).toBe('WBGT');
   });
 
+  it('maps Feels Like (decimal id "3", distinct from 0x03 Dewpoint)', () => {
+    expect(lookupHexId('3')).toEqual({
+      name: 'Feels Like',
+      quantity: 'temperature',
+      defaultUnit: '°C',
+    });
+    // regression: the hex 0x03 id is still Dewpoint, not shadowed by "3"
+    expect(lookupHexId('0x03')?.name).toBe('Dewpoint Temperature');
+  });
+
+  it('maps VPD (decimal id "5", distinct from 0x05 Heat Index)', () => {
+    expect(lookupHexId('5')).toEqual({
+      name: 'VPD',
+      quantity: 'vpd',
+      defaultUnit: 'kPa',
+    });
+    // regression: the hex 0x05 id is still Heat Index, not shadowed by "5"
+    expect(lookupHexId('0x05')?.name).toBe('Heat Index');
+  });
+
   it('does not include 0x0F (rain-gain calibration is not a measurement)', () => {
     expect(lookupHexId('0x0F')).toBeUndefined();
   });
