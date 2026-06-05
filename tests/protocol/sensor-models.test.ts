@@ -122,6 +122,29 @@ describe('sensor model -> live-data keys', () => {
     ]);
   });
 
+  it('ws85 wind & rain aliases the wh85 key set (gateway reports img="ws85")', () => {
+    const expected = [
+      '0x0B',
+      '0x0C',
+      '0x19',
+      '0x0A',
+      '0x6D',
+      '0x0D',
+      '0x0E',
+      '0x7C',
+      '0x10',
+      '0x11',
+      '0x12',
+      '0x13',
+      '0x14',
+      'ws85batt',
+      'ws85_voltage',
+      'ws85cap_volt',
+    ];
+    expect(liveDataKeysForModel('ws85')).toEqual(expected);
+    expect(liveDataKeysForModel('ws85')).toEqual(liveDataKeysForModel('wh85'));
+  });
+
   it('wh45 combo (CO2 + PM)', () => {
     const keys = liveDataKeysForModel('wh45');
     expect(keys[0]).toBe('tf_co2');

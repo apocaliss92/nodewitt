@@ -10,13 +10,27 @@ describe('SensorMapper', () => {
     expect(m.getSensorInfo('D1E2F3')?.channel).toBe(1);
   });
 
-  it('filters dead ids', () => {
+  it('maps a WS85 wind & rain sensor (img="ws85") to its hardware id', () => {
+    const m = new SensorMapper();
+    m.updateMapping([{ id: 'WS85AA', img: 'ws85', name: 'Wind & Rain', signal: '4' }]);
+    // wind keys arrive via common_list, rain + battery via piezoRain
+    expect(m.getHardwareId('0x0B')).toBe('WS85AA');
+    expect(m.getHardwareId('0x0C')).toBe('WS85AA');
+    expect(m.getHardwareId('0x13')).toBe('WS85AA');
+    expect(m.getHardwareId('ws85batt')).toBe('WS85AA');
+    expect(m.getHardwareId('ws85_voltage')).toBe('WS85AA');
+    expect(m.getHardwareId('ws85cap_volt')).toBe('WS85AA');
+  });
+
+  it('filters dead ids (FFFFFFFF, FFFFFFFE, 00000000)', () => {
     const m = new SensorMapper();
     m.updateMapping([
       { id: 'FFFFFFFF', img: 'wh31', name: 'Temp & Humidity CH1', signal: '0' },
       { id: 'FFFFFFFE', img: 'wh31', name: 'Temp & Humidity CH2', signal: '0' },
+      { id: '00000000', img: 'wh31', name: 'Temp & Humidity CH3', signal: '0' },
     ]);
     expect(m.getHardwareId('temp1f')).toBeUndefined();
+    expect(m.getHardwareId('temp3f')).toBeUndefined();
     expect(m.getAllHardwareIds()).toEqual([]);
   });
 

@@ -96,6 +96,27 @@ const ARRAY_7IN1: string[] = [
   '5',
 ];
 
+// WS85 wind & rain key set (wind via common_list, rain + battery via piezoRain) — shared
+// by the donor's wh85/"wind & rain" alias and the gateway's img="ws85" token.
+const WS85_KEYS: string[] = [
+  '0x0B',
+  '0x0C',
+  '0x19',
+  '0x0A',
+  '0x6D',
+  '0x0D',
+  '0x0E',
+  '0x7C',
+  '0x10',
+  '0x11',
+  '0x12',
+  '0x13',
+  '0x14',
+  'ws85batt',
+  'ws85_voltage',
+  'ws85cap_volt',
+];
+
 // WH45/WH46 combo (CO2 + PM) key set — shared by all four donor aliases.
 const COMBO_KEYS: string[] = [
   'tf_co2',
@@ -278,25 +299,10 @@ const fixed: Record<string, string[]> = {
   // WN38 black globe thermometer
   wn38: ['0xA1', '0xA2', 'wn38batt'],
   bgt: ['0xA1', '0xA2', 'wn38batt'],
-  // WS85 wind & rain
-  wh85: [
-    '0x0B',
-    '0x0C',
-    '0x19',
-    '0x0A',
-    '0x6D',
-    '0x0D',
-    '0x0E',
-    '0x7C',
-    '0x10',
-    '0x11',
-    '0x12',
-    '0x13',
-    '0x14',
-    'ws85batt',
-    'ws85_voltage',
-    'ws85cap_volt',
-  ],
+  // WS85 wind & rain. The gateway reports this sensor as img="ws85"; the donor matches the
+  // same key set via `("wh85", "wind & rain")`, so both tokens alias the one WS85 key shape.
+  wh85: WS85_KEYS,
+  ws85: WS85_KEYS,
   // WH45 / WH46 combo CO2 + PM
   wh45: [...COMBO_KEYS],
   wh46: [...COMBO_KEYS],
