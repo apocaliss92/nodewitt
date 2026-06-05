@@ -107,6 +107,21 @@ describe('sensor model -> live-data keys', () => {
     expect(liveDataKeysForModel('wn35', 1)).toEqual(['leafwetness_ch1', 'leaf_batt1']);
   });
 
+  it('wh55 leak (channelized)', () => {
+    expect(liveDataKeysForModel('wh55', 1)).toEqual(['leak_ch1', 'leakbatt1']);
+  });
+
+  it('wh54 / lds liquid-depth sensor (channelized)', () => {
+    expect(liveDataKeysForModel('wh54', 2)).toEqual([
+      'lds_air_ch2',
+      'lds_depth_ch2',
+      'lds_voltage_ch2',
+      'lds_batt2',
+      'lds_level_ch2',
+      'lds_total_heat_ch2',
+    ]);
+  });
+
   it('wh45 combo (CO2 + PM)', () => {
     const keys = liveDataKeysForModel('wh45');
     expect(keys[0]).toBe('tf_co2');
