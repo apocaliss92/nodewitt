@@ -265,6 +265,28 @@ describe('decodeLiveData', () => {
     expect(byKey(readings, 'co2_batt')?.value).toBe(100); // min(6*20,100)
   });
 
+  it('decodes co2 (WH45) with a non-numeric battery via the raw fallback (no battery reading)', () => {
+    const readings = decodeLiveData(
+      {
+        co2: [
+          {
+            temp: '20.0',
+            unit: 'F',
+            CO2: '500',
+            battery: 'low',
+          },
+        ],
+      },
+      mapper({}),
+    );
+    // unit 'F' -> the non-c temp key, value converted to °C
+    expect(byKey(readings, 'tf_co2')?.unit).toBe('°C');
+    expect(byKey(readings, 'co2')?.value).toBe(500);
+    // a non-numeric battery falls through to the raw value, which is not numeric
+    // and so yields no co2_batt reading (makeReading skips it)
+    expect(byKey(readings, 'co2_batt')).toBeUndefined();
+  });
+
   it('applies the optional soilad + lds enrichment from extra', () => {
     const readings = decodeLiveData({ common_list: [{ id: '0x02', val: '20.0' }] }, mapper({}), {
       soilCalibration: [{ ch: '1', nowAd: '123' }],

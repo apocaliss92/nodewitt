@@ -208,7 +208,8 @@ export function decodeCo2(items: ReadonlyArray<Item>, out: LiveReading[]): void 
   }
   const battery = str(item, 'battery');
   if (battery && battery !== 'None') {
-    const pct = num(battery) !== undefined ? String(Math.min(num(battery)! * 20, 100)) : battery;
+    const n = num(battery);
+    const pct = n !== undefined ? String(Math.min(n * 20, 100)) : battery;
     push(out, makeReading('co2_batt', pct));
   }
 }
