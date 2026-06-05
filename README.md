@@ -7,7 +7,7 @@ Node.js/TypeScript client for Ecowitt weather stations — local poll + push, on
 ## Install
 
 ```bash
-npm install nodewitt
+npm install @apocaliss92/nodewitt
 ```
 
 ## Transports
@@ -30,7 +30,7 @@ drive it with the same lifecycle: `start()` / `stop()`, subscribe with `on(...)`
 ### Local poll
 
 ```ts
-import { Ecowitt } from 'nodewitt';
+import { Ecowitt } from '@apocaliss92/nodewitt';
 
 const client = Ecowitt.createLocal({
   host: '192.168.20.181',
@@ -58,7 +58,7 @@ await client.stop();
 ### Push listener
 
 ```ts
-import { Ecowitt } from 'nodewitt';
+import { Ecowitt } from '@apocaliss92/nodewitt';
 
 const client = Ecowitt.createListener({ port: 4199 }); // port: 0 for an ephemeral port
 client.on('update', (sensors) => console.log('push update', sensors.length));
