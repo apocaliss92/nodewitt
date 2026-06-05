@@ -89,7 +89,9 @@ describe.runIf(enabled)('facade e2e', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const snap = client.getStation();
     expect(snap.sensors.find((s) => s.quantity === 'temperature')?.value).toBeCloseTo(10, 1);
-    expect(snap.sensors.find((s) => s.quantity === 'humidity' && s.channel === 1)?.battery).toBe(80);
+    expect(snap.sensors.find((s) => s.quantity === 'humidity' && s.channel === 1)?.battery).toBe(
+      80,
+    );
     expect(updates.length).toBeGreaterThanOrEqual(1);
     console.log(`synthetic push -> ${snap.sensors.length} sensors decoded`);
   });
