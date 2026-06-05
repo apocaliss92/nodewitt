@@ -15,6 +15,7 @@ import { mergeSensor, type BatteryUnit, type Sensor, type SensorUpdate } from '.
 import { classifyKey } from './quantity.js';
 import type { ResolvedReading } from '../local/poller.js';
 import type { MappedSensor } from '../local/sensor-mapper.js';
+import type { PushDecodeResult } from '../push/ecowitt-form.js';
 
 /** Read-only seam the station needs from the SensorMapper (model/channel/signal for an id). */
 export interface SensorInfoLookup {
@@ -73,9 +74,71 @@ export class Station {
     return changed;
   }
 
+  /** Ingest a decoded push body; key by passkey + channel/group; returns changed sensors. */
+  ingestPushResult(result: PushDecodeResult, now: number): Sensor[] {
+    const changed: Sensor[] = [];
+    const passkey = result.passkey ?? 'push';
+    // Pass 1: measurements (a push reading with a numeric `battery` is a battery field).
+    for (const r of result.readings) {
+      if (r.battery !== undefined) continue; // percent batteries handled in pass 2
+      const cls = classifyKey(r.key);
+      if (cls.kind === 'battery') continue; // voltage battery (unit V) handled in pass 2
+      if (cls.kind !== 'measurement') continue;
+      const owner = this.pushOwner(passkey, r.channel);
+      const id = `${owner}:${r.key}`;
+      this.upsert(
+        id,
+        {
+          id,
+          ...(r.channel !== undefined ? { channel: r.channel } : {}),
+          quantity: cls.quantity,
+          value: r.value,
+          unit: r.unit,
+          raw: r.raw,
+          lastUpdated: now,
+        },
+        { value: r.value, unit: r.unit, raw: r.raw, lastUpdated: now },
+        changed,
+      );
+    }
+    // Pass 2: batteries — percent (PushReading.battery set) or raw voltage (scalar unit 'V').
+    for (const r of result.readings) {
+      const pct = r.battery;
+      if (pct !== undefined) {
+        this.applyPushBattery(passkey, r.channel, pct, '%', now, changed);
+        continue;
+      }
+      if (classifyKey(r.key).kind === 'battery' && r.unit === 'V') {
+        this.applyPushBattery(passkey, r.channel, r.value, 'V', now, changed);
+      }
+    }
+    return changed;
+  }
+
   /** Immutable snapshot of all sensors. */
   getSensors(): Sensor[] {
     return [...this.sensors.values()];
+  }
+
+  private pushOwner(passkey: string, channel: number | undefined): string {
+    return channel !== undefined ? `${passkey}:ch${String(channel)}` : `${passkey}:station`;
+  }
+
+  private applyPushBattery(
+    passkey: string,
+    channel: number | undefined,
+    battery: number,
+    batteryUnit: BatteryUnit,
+    now: number,
+    changed: Sensor[],
+  ): void {
+    const owner = this.pushOwner(passkey, channel);
+    for (const [id, sensor] of this.sensors) {
+      if (!id.startsWith(`${owner}:`)) continue;
+      const next = mergeSensor(sensor, { battery, batteryUnit, lastUpdated: now });
+      this.sensors.set(id, next);
+      if (sensor.battery !== battery) changed.push(next);
+    }
   }
 
   protected upsert(id: string, create: Sensor, update: SensorUpdate, changed: Sensor[]): void {
