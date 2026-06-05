@@ -5,9 +5,10 @@
  * `application/x-www-form-urlencoded` body, parses it into a flat key/value map via
  * `URLSearchParams`, and hands the map to the `onForm` callback. It always responds `OK`.
  *
- * Resilient by construction: the body is size-capped, a malformed/oversized body is answered
- * (still `OK`, so the gateway does not retry-storm) without throwing, and a throwing `onForm`
- * callback is isolated so one bad payload never crashes the server. No I/O beyond the socket.
+ * Resilient by construction: the body is size-capped, and an oversized body is answered the moment
+ * the cap is crossed (still `OK`, so the gateway does not retry-storm; the remainder is drained, not
+ * reset), a malformed body is answered without throwing, and a throwing `onForm` callback is isolated
+ * so one bad payload never crashes the server. No I/O beyond the socket.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -86,8 +87,16 @@ export class PushListener {
     const server = this.server;
     if (server === undefined) return Promise.resolve();
     this.server = undefined;
-    return new Promise<void>((resolve) => {
-      server.close(() => {
+    return new Promise<void>((resolve, reject) => {
+      // Drop idle keep-alive sockets first (Node >= 18.2) so close() doesn't wait on them.
+      server.closeAllConnections();
+      server.once('error', reject);
+      server.close((error) => {
+        server.removeListener('error', reject);
+        if (error !== undefined && error !== null) {
+          reject(error);
+          return;
+        }
         resolve();
       });
     });
@@ -103,10 +112,15 @@ export class PushListener {
     let total = 0;
     let aborted = false;
     req.on('data', (chunk: Buffer) => {
+      if (aborted) return; // cap exceeded: drain remaining data, stop accumulating.
       total += chunk.length;
       if (total > MAX_BODY_BYTES) {
+        // Over the cap. Free the buffered body, report, and answer `OK` (so the gateway does not
+        // retry-storm) while still draining the rest of the request to let the socket close clean.
         aborted = true;
-        req.destroy();
+        chunks.length = 0;
+        this.report(new Error(`PushListener: body exceeded ${String(MAX_BODY_BYTES)} bytes`));
+        if (!res.writableEnded && !res.destroyed) this.respondOk(res);
         return;
       }
       chunks.push(chunk);
@@ -115,10 +129,7 @@ export class PushListener {
       this.report(error);
     });
     req.on('end', () => {
-      if (aborted) {
-        this.respondOk(res);
-        return;
-      }
+      if (aborted) return; // already answered when the cap was hit.
       this.dispatch(Buffer.concat(chunks).toString('utf8'), res);
     });
   }

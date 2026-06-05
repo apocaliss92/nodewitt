@@ -78,6 +78,24 @@ describe('PushListener — resilience', () => {
     expect(received).toHaveLength(1);
   });
 
+  it('an oversized body is answered OK (not reset) and the server stays up', async () => {
+    const errors: unknown[] = [];
+    listener = new PushListener({ port: 0, onForm: () => {}, onError: (e) => errors.push(e) });
+    const { port } = await listener.start();
+
+    // 2 MiB body, well above the 1 MiB cap → must still get a 200 OK, not ECONNRESET.
+    const huge = 'PASSKEY=A&blob=' + 'x'.repeat(2 * 1_048_576);
+    const oversized = await post(port, huge);
+    expect(oversized.status).toBe(200);
+    expect(oversized.text).toBe('OK');
+    expect(errors.length).toBeGreaterThan(0);
+
+    // The server survives and serves a subsequent normal POST.
+    const normal = await post(port, 'PASSKEY=B&tempf=51.0');
+    expect(normal.status).toBe(200);
+    expect(normal.text).toBe('OK');
+  });
+
   it('a non-POST request is answered OK without invoking onForm', async () => {
     let called = false;
     listener = new PushListener({ port: 0, onForm: () => (called = true) });
@@ -103,6 +121,15 @@ describe('PushListener — decoded readings', () => {
     expect(by('humidity')?.value).toBe(82);
     expect(by('wh65batt')?.battery).toBe(100);
     expect(by('pm25_ch1')?.channel).toBe(1);
+  });
+
+  it('start() then stop() resolves cleanly even with a kept-alive connection open', async () => {
+    listener = new PushListener({ port: 0, onForm: () => {} });
+    const { port } = await listener.start();
+    // open a keep-alive connection so a naive close() could hang
+    await post(port, 'PASSKEY=A&tempf=50.0');
+    await expect(listener.stop()).resolves.toBeUndefined();
+    listener = undefined;
   });
 
   it('throws when neither onForm nor onReadings is provided', () => {
