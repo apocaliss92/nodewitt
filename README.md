@@ -71,12 +71,13 @@ await client.stop();
 
 ### Events
 
-| event           | payload           | when                                                            |
-| --------------- | ----------------- | --------------------------------------------------------------- |
-| `update`        | `Sensor[]`        | the sensors whose value or battery changed on the latest ingest |
-| `sensorChanged` | `Sensor`          | one sensor changed (emitted once per changed sensor)            |
-| `snapshot`      | `StationSnapshot` | the full station snapshot after every ingest                    |
-| `error`         | `Error`           | a transport/decoder error (never thrown into the consumer)      |
+| event           | payload           | when                                                                         |
+| --------------- | ----------------- | ---------------------------------------------------------------------------- |
+| `update`        | `Sensor[]`        | the sensors whose value or battery changed on the latest ingest              |
+| `sensorChanged` | `Sensor`          | one sensor changed (emitted once per changed sensor)                         |
+| `snapshot`      | `StationSnapshot` | the full station snapshot after every ingest                                 |
+| `error`         | `Error`           | a transport/decoder error (never thrown into the consumer)                   |
+| `rawFrame`      | `RawFrame`        | a raw, undecoded transport frame (poll livedata / push form) for diagnostics |
 
 ### The unified `Sensor`
 
@@ -94,6 +95,49 @@ await client.stop();
 Both transports converge on this one model: poll keys sensors by hardware id (stable across battery
 swaps); push keys by `PASSKEY` + channel. Values are SI internally with the raw string preserved.
 Batteries are surfaced exactly as the transport produced them (percent or volts) — never re-decoded.
+
+## Diagnostic dump
+
+`createDumper` attaches a **read-only** diagnostic recorder to a live `Ecowitt` client. nodewitt
+issues no commands — the dumper only _observes_ the event stream plus a sensor snapshot — so it can
+never change the gateway. It records what the station exposes during operation (sensor models,
+channels, measurement keys, battery encodings, and optionally raw frames) and exports an
+**anonymized** `DeviceDump` JSON in the shared cross-library dump format.
+
+```ts
+import { Ecowitt, createDumper } from '@apocaliss92/nodewitt';
+
+const client = Ecowitt.createLocal({ host: '192.168.20.181' });
+const dumper = createDumper(client, { captureRawFrames: true });
+await client.start();
+dumper.start();
+// ...let the station report for a while (one or more poll ticks)...
+dumper.stop();
+const json = dumper.exportJson(); // anonymized, share-safe JSON
+await client.stop();
+```
+
+The output is **anonymized**: the gateway `mac` / `PASSKEY` / SSID / IP / host / latitude / longitude
+and any value-borne secret are replaced with `[redacted]`. Raw frames are scrubbed both on capture and
+on export, so a `PASSKEY` or `mac` carried in a poll/push frame never reaches the JSON.
+
+### Sharing a dump to extend the sensor tables
+
+Entries under `observations.properties` with a **non-empty `unmapped` array** name something nodewitt
+does not yet recognize:
+
+- `model:<img>` — a sensor model token (e.g. a brand-new `wh99`) absent from the protocol tables.
+- `key:<rawKey>` — a measurement/push key (e.g. a new hex id or firmware field) that `classifyKey`
+  cannot map.
+- `battery:<rawKey>` — a battery key whose encoding none of the decoders can decode.
+
+Attaching the anonymized JSON to a GitHub issue lets maintainers fold the new sensor type into
+`protocol/sensor-models.ts` / `protocol/hex-ids.ts` / `protocol/battery.ts`.
+
+> **Note:** `captureRawFrames` (off by default) is required to surface unknown raw measurement keys
+> and undecodable batteries. The `Station` drops any reading it cannot classify, so those keys only
+> appear in the raw poll/push frames — which the dumper captures (and redacts) only when this flag is
+> on. The unmapped-_model_ signal works without it.
 
 ## Acknowledgments
 
