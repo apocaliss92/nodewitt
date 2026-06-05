@@ -20,7 +20,7 @@ const INDEX_SOURCE = readFileSync(
 );
 
 /** Value exports that MUST exist as runtime keys on the package root. */
-const VALUE_EXPORTS = ['Ecowitt', 'LIBRARY_NAME'] as const;
+const VALUE_EXPORTS = ['Ecowitt', 'LIBRARY_NAME', 'createDumper'] as const;
 
 /** Type-only exports that MUST appear in an `export type { … }` in the source (no runtime key). */
 const TYPE_EXPORTS = [
@@ -32,6 +32,11 @@ const TYPE_EXPORTS = [
   'ListenerOptions',
   'EcowittOptions',
   'EcowittEvents',
+  'RawFrame',
+  'RawFrameSource',
+  'StationInfo',
+  'DumperOptions',
+  'DeviceDump',
 ] as const;
 
 /**
@@ -62,6 +67,15 @@ const FORBIDDEN = [
   'acceptPush',
   'acceptError',
   'bindAddressSource',
+  // diagnostics internals — only createDumper/DeviceDump/DumperOptions are public
+  'redact',
+  'sanitizeStringValue',
+  'REDACTED',
+  'DeviceDumpSchema',
+  'Dumper',
+  'SensorAccumulator',
+  'buildCatalog',
+  'DumperClient',
 ] as const;
 
 /** The facade-internal ingest/wiring seams that MUST be native-private (no runtime instance key). */
