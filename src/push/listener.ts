@@ -30,6 +30,8 @@ export interface PushListenerOptions {
   readonly onForm?: (form: Record<string, string>) => void;
   /** Decoded-readings callback (optional). At least one of onForm/onReadings is required. */
   readonly onReadings?: (result: PushDecodeResult) => void;
+  /** Optional raw-frame sink: the unmodified parsed form map per upload (diagnostics). */
+  readonly onRawFrame?: (form: Record<string, string>) => void;
   /** Optional error sink (parse/callback failures); never throws back into the server. */
   readonly onError?: (error: unknown) => void;
 }
@@ -137,6 +139,7 @@ export class PushListener {
   private dispatch(body: string, res: ServerResponse): void {
     try {
       const form = parseFormBody(body);
+      if (this.options.onRawFrame !== undefined) this.options.onRawFrame(form);
       if (this.options.onForm !== undefined) this.options.onForm(form);
       if (this.options.onReadings !== undefined) this.options.onReadings(decodePushForm(form));
     } catch (error) {

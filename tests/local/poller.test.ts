@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LocalPoller, type PollerEndpoints } from '../../src/local/poller.js';
 import type { RawLiveData } from '../../src/local/livedata.js';
-import type { SensorInfo } from '../../src/local/endpoints.js';
+import type { GatewayVersion, SensorInfo } from '../../src/local/endpoints.js';
 
 const SENSORS: SensorInfo[] = [
   { id: 'A1', img: 'wh90', name: 'Solar & Wind & Rain', signal: '4', batt: '5' },
 ];
 const LIVE: RawLiveData = { common_list: [{ id: '0x02', val: '20.0' }] };
+const VERSION: GatewayVersion = {
+  version: 'V3.1.5',
+  stationtype: 'GW2000A_V3.1.5',
+  sensoridPage: 1,
+};
 
 // Minimal Endpoints double — only the methods the poller calls.
 function makeEndpoints(
@@ -14,16 +19,19 @@ function makeEndpoints(
     live: PollerEndpoints['getLiveData'];
     sensors: PollerEndpoints['getAllSensors'];
     units: PollerEndpoints['getUnits'];
+    version: PollerEndpoints['getVersion'];
   }> = {},
 ): {
   getLiveData: ReturnType<typeof vi.fn>;
   getAllSensors: ReturnType<typeof vi.fn>;
   getUnits: ReturnType<typeof vi.fn>;
+  getVersion: ReturnType<typeof vi.fn>;
 } {
   return {
     getLiveData: vi.fn(over.live ?? (async (): Promise<RawLiveData> => LIVE)),
     getAllSensors: vi.fn(over.sensors ?? (async (): Promise<SensorInfo[]> => SENSORS)),
     getUnits: vi.fn(over.units ?? (async (): Promise<Record<string, unknown>> => ({}))),
+    getVersion: vi.fn(over.version ?? (async (): Promise<GatewayVersion> => VERSION)),
   };
 }
 
@@ -255,6 +263,34 @@ describe('LocalPoller', () => {
     await poller.start();
     poller.stop();
     await expect(poller.start()).resolves.toBeUndefined();
+
+    poller.stop();
+  });
+
+  it('forwards the raw /get_livedata_info object to onRawFrame each poll', async () => {
+    const endpoints = makeEndpoints();
+    const frames: RawLiveData[] = [];
+    const poller = new LocalPoller({
+      endpoints,
+      onReadings: () => {},
+      onError: () => {},
+      onRawFrame: (raw) => frames.push(raw),
+    });
+
+    await poller.start();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toEqual(LIVE);
+
+    poller.stop();
+  });
+
+  it('captures the gateway model/firmware from /get_version into getStationInfo()', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({ endpoints, onReadings: () => {}, onError: () => {} });
+
+    expect(poller.getStationInfo()).toEqual({});
+    await poller.start();
+    expect(poller.getStationInfo()).toEqual({ model: 'GW2000A_V3.1.5', firmware: 'V3.1.5' });
 
     poller.stop();
   });

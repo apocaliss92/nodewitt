@@ -44,6 +44,20 @@ describe('PushListener', () => {
     const addr: AddressInfo = await listener.start();
     expect(addr.port).toBeGreaterThan(0);
   });
+
+  it('forwards the raw parsed form to onRawFrame', async () => {
+    const frames: Array<Record<string, string>> = [];
+    listener = new PushListener({
+      port: 0,
+      onForm: () => {},
+      onRawFrame: (form) => frames.push(form),
+    });
+    const addr = await listener.start();
+    const { status } = await post(addr.port, 'PASSKEY=ABC&tempf=50.0&foobar99=x');
+    expect(status).toBe(200);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ PASSKEY: 'ABC', tempf: '50.0', foobar99: 'x' });
+  });
 });
 
 describe('PushListener — resilience', () => {

@@ -36,6 +36,32 @@ export type EcowittOptions =
   | ({ readonly transport: 'local' } & LocalOptions)
   | ({ readonly transport: 'listener' } & ListenerOptions);
 
+/** Origin of a {@link RawFrame}: a local poll tick or a pushed "Customized" upload. */
+export type RawFrameSource = 'poll' | 'push';
+
+/**
+ * A RAW, undecoded transport frame surfaced for diagnostics. `payload` is the raw
+ * `/get_livedata_info` object for a `poll` and the raw flat form map for a `push`
+ * — exactly what the gateway sent, BEFORE decode/classification. Consumed by the
+ * diagnostic dumper to surface measurement keys the Station would otherwise drop
+ * (its anonymizer redacts any secret the raw payload carries). Typed `unknown`
+ * because the two sources differ in shape; consumers narrow as needed.
+ */
+export interface RawFrame {
+  /** Where the frame came from. */
+  readonly source: RawFrameSource;
+  /** The raw, undecoded frame payload (shape depends on `source`). */
+  readonly payload: unknown;
+}
+
+/** Lightweight gateway identity (from `/get_version`). Both fields are best-effort. */
+export interface StationInfo {
+  /** Gateway model / station type (e.g. "GW2000A_V3.1.5"); omitted when unknown. */
+  readonly model?: string;
+  /** Gateway firmware version string; omitted when unknown. */
+  readonly firmware?: string;
+}
+
 /** Event-map for the facade's typed emitter (single payload per event). */
 export type EcowittEvents = {
   /** A batch of sensors updated by the latest ingest (poll tick or push body). */
@@ -46,4 +72,6 @@ export type EcowittEvents = {
   readonly snapshot: StationSnapshot;
   /** A transport/decoder error (never throws into the consumer). */
   readonly error: Error;
+  /** A raw, undecoded transport frame (for diagnostics; see {@link RawFrame}). */
+  readonly rawFrame: RawFrame;
 };

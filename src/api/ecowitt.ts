@@ -24,8 +24,15 @@ import { LocalPoller, type ResolvedReading } from '../local/poller.js';
 import { PushListener } from '../push/listener.js';
 import type { PushDecodeResult } from '../push/ecowitt-form.js';
 import { Station, type StationSnapshot, type SensorInfoLookup } from '../model/station.js';
+import type { RawLiveData } from '../local/livedata.js';
 import { TypedEmitter, type Listener } from './events.js';
-import type { EcowittEvents, LocalOptions, ListenerOptions } from './types.js';
+import type {
+  EcowittEvents,
+  LocalOptions,
+  ListenerOptions,
+  RawFrameSource,
+  StationInfo,
+} from './types.js';
 
 /** The minimal transport handle the facade drives (poll or push). */
 interface TransportHandle {
@@ -36,6 +43,8 @@ interface TransportHandle {
 /** A built local transport: the poller handle + the lookup the Station needs. */
 export interface LocalTransport extends TransportHandle {
   readonly lookup: SensorInfoLookup;
+  /** Optional gateway identity source (model/firmware from `/get_version`). */
+  getStationInfo?(): StationInfo;
 }
 
 /** A built listener transport: exposes the bound address (for `port: 0`). */
@@ -47,12 +56,16 @@ export interface ListenerTransport extends TransportHandle {
 interface LocalBuildOptions {
   readonly onReadings: (readings: ResolvedReading[]) => void;
   readonly onError: (error: unknown) => void;
+  /** Raw `/get_livedata_info` per poll (diagnostics; re-emitted as a `rawFrame` event). */
+  readonly onRawFrame: (raw: RawLiveData) => void;
 }
 
 /** Callbacks the facade supplies to a listener transport builder. */
 interface ListenerBuildOptions {
   readonly onReadings: (result: PushDecodeResult) => void;
   readonly onError: (error: unknown) => void;
+  /** Raw parsed form per push upload (diagnostics; re-emitted as a `rawFrame` event). */
+  readonly onRawFrame: (form: Record<string, string>) => void;
 }
 
 function toError(error: unknown): Error {
@@ -76,6 +89,7 @@ export class Ecowitt {
   readonly #emitter = new TypedEmitter<EcowittEvents>();
   readonly #transport: TransportHandle;
   #addressSource: (() => AddressInfo | undefined) | undefined;
+  #stationInfoSource: (() => StationInfo) | undefined;
 
   /**
    * Private constructor: instances are created only via the static factories / internal seams.
@@ -109,8 +123,12 @@ export class Ecowitt {
       const transport = build({
         onReadings: (readings) => self.#acceptPoll(readings, lookup),
         onError: (error) => self.#acceptError(error),
+        onRawFrame: (raw) => self.#acceptRawFrame('poll', raw),
       });
       lookup = transport.lookup;
+      if (transport.getStationInfo !== undefined) {
+        self.#stationInfoSource = (): StationInfo => transport.getStationInfo?.() ?? {};
+      }
       return transport;
     });
   }
@@ -121,6 +139,7 @@ export class Ecowitt {
       const transport = build({
         onReadings: (result) => self.#acceptPush(result),
         onError: (error) => self.#acceptError(error),
+        onRawFrame: (form) => self.#acceptRawFrame('push', form),
       });
       self.#addressSource = (): AddressInfo | undefined => transport.getAddress();
       return transport;
@@ -181,6 +200,15 @@ export class Ecowitt {
     return this.#addressSource?.();
   }
 
+  /**
+   * Gateway identity (model/firmware from `/get_version`), best-effort. Populated by the local
+   * transport after the first mapping refresh; `{}` before that or for the listener transport
+   * (which has no version endpoint). Read-only — never performs I/O.
+   */
+  getStationInfo(): StationInfo {
+    return this.#stationInfoSource?.() ?? {};
+  }
+
   /** Ingest a poll batch + emit. */
   #acceptPoll(readings: ResolvedReading[], lookup: SensorInfoLookup): void {
     const changed = this.#station.ingestPollReadings(readings, lookup, Date.now());
@@ -196,6 +224,11 @@ export class Ecowitt {
   /** Surface a transport error as an `error` event (never throws). */
   #acceptError(error: unknown): void {
     this.#emitter.emit('error', toError(error));
+  }
+
+  /** Re-emit a raw, undecoded transport frame for diagnostics consumers. */
+  #acceptRawFrame(source: RawFrameSource, payload: unknown): void {
+    this.#emitter.emit('rawFrame', { source, payload });
   }
 
   #publish(changed: ReadonlyArray<StationSnapshot['sensors'][number]>): void {
@@ -217,7 +250,7 @@ export function __createLocalWith(
 
 /** The real local transport: HttpClient → Endpoints → LocalPoller, sharing the poller's mapper. */
 function defaultLocalBuilder(options: LocalOptions): (opts: LocalBuildOptions) => LocalTransport {
-  return ({ onReadings, onError }) => {
+  return ({ onReadings, onError, onRawFrame }) => {
     const http = new HttpClient({
       host: options.host,
       ...(options.port !== undefined ? { port: options.port } : {}),
@@ -232,12 +265,14 @@ function defaultLocalBuilder(options: LocalOptions): (opts: LocalBuildOptions) =
         : {}),
       onReadings,
       onError,
+      onRawFrame,
     });
     return {
       start: () => poller.start(),
       stop: () => poller.stop(),
       // Share the poller's OWN primed mapper — single source of truth, kept fresh by the poller.
       lookup: poller.getMapper(),
+      getStationInfo: () => poller.getStationInfo(),
     };
   };
 }
@@ -254,13 +289,14 @@ export function __createListenerWith(
 function defaultListenerBuilder(
   options: ListenerOptions,
 ): (opts: ListenerBuildOptions) => ListenerTransport {
-  return ({ onReadings, onError }) => {
+  return ({ onReadings, onError, onRawFrame }) => {
     let address: AddressInfo | undefined;
     const listener = new PushListener({
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
       onReadings,
       onError,
+      onRawFrame,
     });
     return {
       start: async () => {

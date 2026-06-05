@@ -11,7 +11,7 @@
 
 import { decodeLiveData, type LiveReading, type RawLiveData } from './livedata.js';
 import { SensorMapper, type MappedSensor } from './sensor-mapper.js';
-import type { SensorInfo } from './endpoints.js';
+import type { GatewayVersion, SensorInfo } from './endpoints.js';
 
 const DEFAULT_SCAN_MS = 60_000;
 const DEFAULT_MAPPING_MS = 600_000;
@@ -24,11 +24,18 @@ export interface PollerEndpoints {
   getLiveData(): Promise<RawLiveData>;
   getAllSensors(): Promise<SensorInfo[]>;
   getUnits(): Promise<Record<string, unknown>>;
+  getVersion(): Promise<GatewayVersion>;
 }
 
 /** A decoded reading with its resolved owner (a hardware id, or `undefined` for gateway keys). */
 export interface ResolvedReading extends LiveReading {
   readonly hardwareId: string | undefined;
+}
+
+/** Lightweight gateway identity captured from `/get_version`. */
+export interface PollerStationInfo {
+  readonly model?: string;
+  readonly firmware?: string;
 }
 
 export interface LocalPollerOptions {
@@ -37,6 +44,8 @@ export interface LocalPollerOptions {
   readonly mappingIntervalMs?: number;
   readonly onReadings: (readings: ResolvedReading[]) => void;
   readonly onError: (error: unknown) => void;
+  /** Optional raw-frame sink: the unmodified `/get_livedata_info` object per poll (diagnostics). */
+  readonly onRawFrame?: (raw: RawLiveData) => void;
 }
 
 export class LocalPoller {
@@ -47,8 +56,15 @@ export class LocalPoller {
   // Gateway temperature unit for channelized temps. Donor: get_units_info "temperature"
   // (fallback "temp"); "0" -> Celsius, any other value -> Fahrenheit. Default 'C'.
   private gatewayTempUnit = 'C';
+  // Gateway identity, captured on each mapping refresh from /get_version. Best-effort.
+  private stationInfo: PollerStationInfo = {};
 
   constructor(private readonly opts: LocalPollerOptions) {}
+
+  /** Gateway identity (model/firmware) captured from the last `/get_version`. Best-effort. */
+  getStationInfo(): PollerStationInfo {
+    return this.stationInfo;
+  }
 
   /**
    * The poller's own primed `SensorMapper`, exposed as a read-only `getSensorInfo` lookup so the
@@ -95,6 +111,11 @@ export class LocalPoller {
       const units = await this.opts.endpoints.getUnits();
       const code = units['temperature'] ?? units['temp'];
       this.gatewayTempUnit = String(code) === '0' ? 'C' : 'F';
+      const version = await this.opts.endpoints.getVersion();
+      this.stationInfo = {
+        ...(version.stationtype !== undefined ? { model: version.stationtype } : {}),
+        ...(version.version !== undefined ? { firmware: version.version } : {}),
+      };
       const sensors = await this.opts.endpoints.getAllSensors();
       this.mapper.updateMapping(sensors);
     } catch (error) {
@@ -106,6 +127,7 @@ export class LocalPoller {
   private async poll(): Promise<void> {
     try {
       const raw = await this.opts.endpoints.getLiveData();
+      this.opts.onRawFrame?.(raw);
       const decoded = decodeLiveData(raw, this.mapper, {}, this.gatewayTempUnit);
       const resolved: ResolvedReading[] = decoded.map((reading) => ({
         ...reading,
