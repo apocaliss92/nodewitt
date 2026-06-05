@@ -39,6 +39,11 @@ export class TypedEmitter<E> {
     return this.emitter.emit(event, payload);
   }
 
+  /** Number of registered listeners for an event (internal diagnostics use). */
+  listenerCount<K extends keyof E & string>(event: K): number {
+    return this.emitter.listenerCount(event);
+  }
+
   removeAllListeners(): this {
     this.emitter.removeAllListeners();
     return this;

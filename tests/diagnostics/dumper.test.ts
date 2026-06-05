@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { SensorAccumulator, buildCatalog } from '../../src/diagnostics/dumper.js';
+import {
+  SensorAccumulator,
+  buildCatalog,
+  createDumper,
+  Dumper,
+} from '../../src/diagnostics/dumper.js';
+import { TypedEmitter } from '../../src/api/events.js';
+import type { EcowittEvents, StationInfo } from '../../src/api/types.js';
+import type { StationSnapshot } from '../../src/model/station.js';
+import { DeviceDumpSchema } from '../../src/diagnostics/dump-format.js';
 import type { Sensor } from '../../src/model/sensor.js';
 
 function sensor(p: Partial<Sensor>): Sensor {
@@ -85,5 +94,183 @@ describe('buildCatalog', () => {
     expect(cat.commands).toBeUndefined(); // nodewitt has no commands
     const caps = cat.capabilities;
     expect(caps?.models).toEqual(['wh31', 'ws90']);
+  });
+});
+
+/** A minimal real-emitter-backed fake satisfying the DumperClient seam (no cast). */
+class FakeEcowitt {
+  readonly #emitter = new TypedEmitter<EcowittEvents>();
+  #sensors: Sensor[] = [];
+  #info: StationInfo = {};
+  setSensors(s: Sensor[]): void {
+    this.#sensors = s;
+  }
+  setInfo(info: StationInfo): void {
+    this.#info = info;
+  }
+  emitUpdate(s: Sensor[]): void {
+    this.#emitter.emit('update', s);
+  }
+  emitRawFrame(source: 'poll' | 'push', payload: unknown): void {
+    this.#emitter.emit('rawFrame', { source, payload });
+  }
+  on<K extends keyof EcowittEvents>(e: K, l: (p: EcowittEvents[K]) => void): this {
+    this.#emitter.on(e, l);
+    return this;
+  }
+  off<K extends keyof EcowittEvents>(e: K, l: (p: EcowittEvents[K]) => void): this {
+    this.#emitter.off(e, l);
+    return this;
+  }
+  getSensors(): StationSnapshot['sensors'] {
+    return this.#sensors;
+  }
+  getStationInfo(): StationInfo {
+    return this.#info;
+  }
+  listenerCount(e: keyof EcowittEvents): number {
+    return this.#emitter.listenerCount(e);
+  }
+}
+
+describe('Dumper', () => {
+  it('records the live update stream into the accumulator', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client);
+    dumper.start();
+    client.emitUpdate([sensor({ quantity: 'temperature', value: 6.3, model: 'wh31', channel: 1 })]);
+    client.emitUpdate([sensor({ quantity: 'temperature', value: 7.1, model: 'wh99', channel: 1 })]);
+    const dump = dumper.export();
+    expect(dump.observations.properties['sensor:temperature']?.values).toContain(6.3);
+    expect(dump.observations.properties['model:wh99']?.unmapped).toEqual(['wh99']);
+    expect(dump.observations.properties['model:wh31']?.unmapped).toEqual([]);
+    dumper.stop();
+  });
+
+  it('start/stop are idempotent and stop removes exactly the dumper listeners (no leak)', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client, { captureRawFrames: true });
+    expect(client.listenerCount('update')).toBe(0);
+    expect(client.listenerCount('rawFrame')).toBe(0);
+    dumper.start();
+    dumper.start(); // idempotent
+    const after =
+      client.listenerCount('update') +
+      client.listenerCount('sensorChanged') +
+      client.listenerCount('rawFrame');
+    dumper.stop();
+    dumper.stop(); // idempotent
+    expect(client.listenerCount('update')).toBe(0);
+    expect(client.listenerCount('sensorChanged')).toBe(0);
+    expect(client.listenerCount('rawFrame')).toBe(0);
+    expect(after).toBeGreaterThan(0);
+  });
+
+  it('does not subscribe to rawFrame unless captureRawFrames is on', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client);
+    dumper.start();
+    expect(client.listenerCount('rawFrame')).toBe(0);
+    dumper.stop();
+  });
+
+  it('auto-captures push rawFrames: scrubs secrets, flags unknown keys', () => {
+    const client = new FakeEcowitt();
+    client.setSensors([sensor({ model: 'wh31', channel: 1, quantity: 'temperature' })]);
+    const dumper = createDumper(client, { captureRawFrames: true });
+    dumper.start();
+    // a raw push frame carrying secrets + an unknown key + an undecodable battery
+    client.emitRawFrame('push', {
+      PASSKEY: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4',
+      mac: '34:94:54:AA:BB:CC',
+      ssid: 'HomeNet',
+      tempf: '50.0',
+      foobar99: 'x',
+    });
+    const json = dumper.exportJson();
+    expect(json).not.toContain('A1B2C3D4E5F6'); // PASSKEY scrubbed
+    expect(json).not.toContain('34:94:54'); // mac scrubbed
+    expect(json).not.toContain('HomeNet'); // ssid scrubbed
+    const dump = dumper.export();
+    expect(DeviceDumpSchema.safeParse(dump).success).toBe(true);
+    expect(dump.observations.properties['key:foobar99']?.unmapped).toEqual(['foobar99']);
+    expect(dump.observations.rawFrames?.length).toBe(1);
+    expect(dump.library).toBe('nodewitt');
+    expect(dump.catalog.sensors).toEqual([{ model: 'wh31', channel: 1 }]);
+    dumper.stop();
+  });
+
+  it('auto-captures poll rawFrames: flags an unknown hex id in common_list', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client, { captureRawFrames: true });
+    dumper.start();
+    client.emitRawFrame('poll', {
+      common_list: [
+        { id: '0x02', val: '6.3' }, // known -> not flagged
+        { id: '0xFE', val: '123' }, // fictional hex id -> unknown -> flagged
+      ],
+    });
+    const dump = dumper.export();
+    expect(dump.observations.properties['key:0xFE']?.unmapped).toEqual(['0xFE']);
+    expect(dump.observations.properties['key:0x02']).toBeUndefined();
+    dumper.stop();
+  });
+
+  it('uses getStationInfo() for device model/firmware (anonymized)', () => {
+    const client = new FakeEcowitt();
+    client.setInfo({ model: 'GW2000A_V3.1.5', firmware: 'V3.1.5' });
+    const dumper = createDumper(client);
+    dumper.start();
+    const dump = dumper.export();
+    expect(dump.device.model).toBe('GW2000A_V3.1.5');
+    expect(dump.device.firmware).toBe('V3.1.5');
+    expect(dump.device.type).toBe('weather-station');
+    dumper.stop();
+  });
+
+  it('falls back to the generic "ecowitt" model when station info is empty', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client);
+    dumper.start();
+    const dump = dumper.export();
+    expect(dump.device.model).toBe('ecowitt');
+    expect(dump.device.firmware).toBeUndefined();
+    dumper.stop();
+  });
+
+  it('bounds retained raw frames by maxRawFrames', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client, { captureRawFrames: true, maxRawFrames: 2 });
+    dumper.start();
+    for (let i = 0; i < 5; i += 1) {
+      client.emitRawFrame('push', { tempf: String(i) });
+    }
+    const dump = dumper.export();
+    expect(dump.observations.rawFrames?.length).toBe(2);
+    dumper.stop();
+  });
+
+  it('exports a deterministic dump (two exports of the same state are equal modulo timestamps)', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client);
+    dumper.start();
+    client.emitUpdate([sensor({ quantity: 'temperature', value: 6.3 })]);
+    const a = dumper.export();
+    const b = dumper.export();
+    expect(a.observations.properties).toEqual(b.observations.properties);
+    dumper.stop();
+  });
+
+  it('export works after stop', () => {
+    const client = new FakeEcowitt();
+    const dumper = createDumper(client);
+    dumper.start();
+    client.emitUpdate([sensor({ quantity: 'humidity', value: 55 })]);
+    dumper.stop();
+    expect(dumper.export().observations.properties['sensor:humidity']).toBeDefined();
+  });
+
+  it('createDumper returns a Dumper instance', () => {
+    expect(createDumper(new FakeEcowitt())).toBeInstanceOf(Dumper);
   });
 });
