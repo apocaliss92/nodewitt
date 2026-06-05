@@ -17,7 +17,9 @@ export type Quantity =
   | 'irradiance'
   | 'uv'
   | 'precipitation'
-  | 'precipitation_rate';
+  | 'precipitation_rate'
+  | 'lightning_distance'
+  | 'lightning_count';
 
 export interface HexIdInfo {
   readonly name: string;
