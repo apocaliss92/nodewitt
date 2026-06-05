@@ -9,6 +9,12 @@
  * uniform `start`/`stop`/`on`/`off`/`getStation`. The transport build sits behind an internal seam
  * (`__createLocalWith`/`__createListenerWith`) so tests inject fakes without a real socket — the
  * seams are NOT re-exported from `index.ts`, so they stay off the published surface.
+ *
+ * The instance ingest seams (`#acceptPoll`/`#acceptPush`/`#acceptError`) and the address-source are
+ * native-`#`-private: the wiring that connects a transport builder's callbacks to them runs inside
+ * the class (`#buildLocal`/`#buildListener`), so none of those methods appear on an instance or in
+ * `dist/index.d.ts`. A static initializer publishes those builders into a module-local `seam` so the
+ * exported test seams can inject fake transports cast-free, without widening the public surface.
  */
 
 import type { AddressInfo } from 'node:net';
@@ -53,104 +59,157 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/**
+ * Module-private wiring seam, populated by the class's static initializer block (which runs in class
+ * scope and can therefore reach the `#`-private builders). The module-level test seams call through
+ * here cast-free. It is a module local — NOT a class member — so it never appears on the `Ecowitt`
+ * type surface (no `accept*` method, no internal build-option types bleed into `dist/index.d.ts`).
+ */
+let seam: {
+  buildLocal: (build: (opts: LocalBuildOptions) => LocalTransport) => Ecowitt;
+  buildListener: (build: (opts: ListenerBuildOptions) => ListenerTransport) => Ecowitt;
+};
+
 /** The facade instance returned by the factories. */
 export class Ecowitt {
-  private readonly station = new Station();
-  private readonly emitter = new TypedEmitter<EcowittEvents>();
-  private readonly transport: TransportHandle;
-  private addressSource: (() => AddressInfo | undefined) | undefined;
+  readonly #station = new Station();
+  readonly #emitter = new TypedEmitter<EcowittEvents>();
+  readonly #transport: TransportHandle;
+  #addressSource: (() => AddressInfo | undefined) | undefined;
 
-  /** @internal — constructed via the static factories / internal seams. */
-  protected constructor(buildTransport: (self: Ecowitt) => TransportHandle) {
-    this.transport = buildTransport(this);
+  /**
+   * Private constructor: instances are created only via the static factories / internal seams.
+   * `wire` runs INSIDE the class body, so it can reach the `#`-private ingest/error seams through
+   * the captured `this` — the wiring never escapes the class, and the seams stay off the surface.
+   */
+  private constructor(wire: (self: Ecowitt) => TransportHandle) {
+    this.#transport = wire(this);
   }
 
   static createLocal(options: LocalOptions): Ecowitt {
-    return __createLocalWith(options, defaultLocalBuilder(options));
+    return Ecowitt.#buildLocal(defaultLocalBuilder(options));
   }
 
   static createListener(options: ListenerOptions = {}): Ecowitt {
-    return __createListenerWith(options);
+    return Ecowitt.#buildListener(defaultListenerBuilder(options));
+  }
+
+  /**
+   * Build a local-transport facade from a transport builder. The wiring closure that hands the
+   * builder its `onReadings`/`onError` callbacks lives HERE, inside the class, so it can call the
+   * `#`-private ingest seams directly — no public method, no cast. `#`-private so it is unreachable
+   * from outside the class; the exported test seam `__createLocalWith` re-exports it (bound) below.
+   */
+  static #buildLocal(build: (opts: LocalBuildOptions) => LocalTransport): Ecowitt {
+    let lookup: SensorInfoLookup = { getSensorInfo: () => undefined };
+    return new Ecowitt((self) => {
+      const transport = build({
+        onReadings: (readings) => self.#acceptPoll(readings, lookup),
+        onError: (error) => self.#acceptError(error),
+      });
+      lookup = transport.lookup;
+      return transport;
+    });
+  }
+
+  /** Build a listener-transport facade from a transport builder (wiring stays inside the class). */
+  static #buildListener(build: (opts: ListenerBuildOptions) => ListenerTransport): Ecowitt {
+    return new Ecowitt((self) => {
+      const transport = build({
+        onReadings: (result) => self.#acceptPush(result),
+        onError: (error) => self.#acceptError(error),
+      });
+      self.#addressSource = (): AddressInfo | undefined => transport.getAddress();
+      return transport;
+    });
+  }
+
+  /**
+   * Publish the `#`-private builders into the module-local `seam` so the file's test seams can
+   * inject a fake transport builder cast-free. Runs in class scope (so `#buildLocal`/`#buildListener`
+   * are reachable); writes only to a module local, so nothing is added to the type/runtime surface.
+   */
+  static {
+    seam = {
+      buildLocal: (build) => Ecowitt.#buildLocal(build),
+      buildListener: (build) => Ecowitt.#buildListener(build),
+    };
   }
 
   on<K extends keyof EcowittEvents>(event: K, listener: Listener<EcowittEvents[K]>): this {
-    this.emitter.on(event, listener);
+    this.#emitter.on(event, listener);
+    return this;
+  }
+
+  once<K extends keyof EcowittEvents>(event: K, listener: Listener<EcowittEvents[K]>): this {
+    this.#emitter.once(event, listener);
     return this;
   }
 
   off<K extends keyof EcowittEvents>(event: K, listener: Listener<EcowittEvents[K]>): this {
-    this.emitter.off(event, listener);
+    this.#emitter.off(event, listener);
     return this;
   }
 
   async start(): Promise<void> {
-    await this.transport.start();
+    await this.#transport.start();
   }
 
+  /**
+   * Stop the transport and remove all listeners. TERMINAL: the transport cannot be restarted —
+   * create a new `Ecowitt` via `createLocal`/`createListener` to resume. All listeners are removed.
+   */
   async stop(): Promise<void> {
-    await this.transport.stop();
-    this.emitter.removeAllListeners();
+    await this.#transport.stop();
+    this.#emitter.removeAllListeners();
   }
 
   getStation(): StationSnapshot {
-    return this.station.getStation();
+    return this.#station.getStation();
   }
 
   /** Convenience accessor: all sensors. */
   getSensors(): StationSnapshot['sensors'] {
-    return this.station.getStation().sensors;
+    return this.#station.getStation().sensors;
   }
 
   /** Bound listen address (listener transport only); undefined before start or for local. */
   getAddress(): AddressInfo | undefined {
-    return this.addressSource?.();
+    return this.#addressSource?.();
   }
 
-  /** @internal — ingest a poll batch + emit. Used by the local transport wiring. */
-  acceptPoll(readings: ResolvedReading[], lookup: SensorInfoLookup): void {
-    const changed = this.station.ingestPollReadings(readings, lookup, Date.now());
-    this.publish(changed);
+  /** Ingest a poll batch + emit. */
+  #acceptPoll(readings: ResolvedReading[], lookup: SensorInfoLookup): void {
+    const changed = this.#station.ingestPollReadings(readings, lookup, Date.now());
+    this.#publish(changed);
   }
 
-  /** @internal — ingest a decoded push body + emit. Used by the listener transport wiring. */
-  acceptPush(result: PushDecodeResult): void {
-    const changed = this.station.ingestPushResult(result, Date.now());
-    this.publish(changed);
+  /** Ingest a decoded push body + emit. */
+  #acceptPush(result: PushDecodeResult): void {
+    const changed = this.#station.ingestPushResult(result, Date.now());
+    this.#publish(changed);
   }
 
-  /** @internal — register the listener transport's bound-address source. */
-  bindAddressSource(source: () => AddressInfo | undefined): void {
-    this.addressSource = source;
+  /** Surface a transport error as an `error` event (never throws). */
+  #acceptError(error: unknown): void {
+    this.#emitter.emit('error', toError(error));
   }
 
-  /** @internal — surface a transport error as an `error` event (never throws). */
-  acceptError(error: unknown): void {
-    this.emitter.emit('error', toError(error));
-  }
-
-  private publish(changed: ReadonlyArray<StationSnapshot['sensors'][number]>): void {
+  #publish(changed: ReadonlyArray<StationSnapshot['sensors'][number]>): void {
     if (changed.length > 0) {
-      this.emitter.emit('update', changed);
-      for (const sensor of changed) this.emitter.emit('sensorChanged', sensor);
+      this.#emitter.emit('update', changed);
+      for (const sensor of changed) this.#emitter.emit('sensorChanged', sensor);
     }
-    this.emitter.emit('snapshot', this.station.getStation());
+    this.#emitter.emit('snapshot', this.#station.getStation());
   }
 }
 
 /** Internal seam: build a local-transport Ecowitt, injecting the transport builder (tests use this). */
 export function __createLocalWith(
-  options: LocalOptions,
+  _options: LocalOptions,
   build: (opts: LocalBuildOptions) => LocalTransport,
 ): Ecowitt {
-  let lookupRef: SensorInfoLookup = { getSensorInfo: () => undefined };
-  return new EcowittFactory((self) => {
-    const transport = build({
-      onReadings: (readings) => self.acceptPoll(readings, lookupRef),
-      onError: (error) => self.acceptError(error),
-    });
-    lookupRef = transport.lookup;
-    return transport;
-  });
+  return seam.buildLocal(build);
 }
 
 /** The real local transport: HttpClient → Endpoints → LocalPoller, sharing the poller's mapper. */
@@ -185,16 +244,7 @@ export function __createListenerWith(
   options: ListenerOptions,
   build: (opts: ListenerBuildOptions) => ListenerTransport = defaultListenerBuilder(options),
 ): Ecowitt {
-  let transportRef: ListenerTransport | undefined;
-  return new EcowittFactory((self) => {
-    const transport = build({
-      onReadings: (result) => self.acceptPush(result),
-      onError: (error) => self.acceptError(error),
-    });
-    transportRef = transport;
-    self.bindAddressSource(() => transportRef?.getAddress());
-    return transport;
-  });
+  return seam.buildListener(build);
 }
 
 /** The real listener transport: a `PushListener` whose decoded results feed the same Station. */
@@ -217,14 +267,4 @@ function defaultListenerBuilder(
       getAddress: () => address,
     };
   };
-}
-
-/**
- * Same-module subclass that exposes the protected `Ecowitt` constructor to the seam functions
- * without any cast. The class itself is not exported; the seams return a plain `Ecowitt`.
- */
-class EcowittFactory extends Ecowitt {
-  constructor(buildTransport: (self: Ecowitt) => TransportHandle) {
-    super(buildTransport);
-  }
 }

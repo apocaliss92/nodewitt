@@ -61,6 +61,15 @@ const FORBIDDEN = [
   'acceptPoll',
   'acceptPush',
   'acceptError',
+  'bindAddressSource',
+] as const;
+
+/** The facade-internal ingest/wiring seams that MUST be native-private (no runtime instance key). */
+const PRIVATE_INSTANCE_SEAMS = [
+  'acceptPoll',
+  'acceptPush',
+  'acceptError',
+  'bindAddressSource',
 ] as const;
 
 describe('public API surface', () => {
@@ -100,6 +109,15 @@ describe('public API surface', () => {
       // `export type { Station }`, `export { Station as X }`) — word-boundary guarded.
       const exportNamePattern = new RegExp(String.raw`export[^;]*\{[^}]*\b${name}\b[^}]*\}`, 's');
       expect(INDEX_SOURCE).not.toMatch(exportNamePattern);
+    }
+  });
+
+  it('keeps the facade ingest/wiring seams native-private (not runtime-present on an instance)', () => {
+    // Constructing a local facade does no I/O until `start()`, so this is safe and side-effect-free.
+    const instance = api.Ecowitt.createLocal({ host: '127.0.0.1' });
+    for (const name of PRIVATE_INSTANCE_SEAMS) {
+      expect(name in instance).toBe(false);
+      expect(typeof Reflect.get(instance, name)).toBe('undefined');
     }
   });
 });
