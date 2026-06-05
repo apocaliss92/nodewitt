@@ -233,6 +233,32 @@ describe('LocalPoller', () => {
     expect(endpoints.getAllSensors).toHaveBeenCalledTimes(1); // no more mapping refreshes
   });
 
+  it('rejects a second start() without leaking the original timers', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({ endpoints, onReadings: () => {}, onError: () => {} });
+
+    await poller.start();
+    await expect(poller.start()).rejects.toThrow('LocalPoller already started');
+
+    // The original schedule is intact and unduplicated: exactly one extra poll per cadence tick.
+    const pollsAfterStart = endpoints.getLiveData.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(endpoints.getLiveData).toHaveBeenCalledTimes(pollsAfterStart + 1);
+
+    poller.stop();
+  });
+
+  it('allows start() again after a stop() (started state resets)', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({ endpoints, onReadings: () => {}, onError: () => {} });
+
+    await poller.start();
+    poller.stop();
+    await expect(poller.start()).resolves.toBeUndefined();
+
+    poller.stop();
+  });
+
   it('uses the default 60s / 600s cadence when intervals are omitted', async () => {
     const endpoints = makeEndpoints();
     const poller = new LocalPoller({ endpoints, onReadings: () => {}, onError: () => {} });

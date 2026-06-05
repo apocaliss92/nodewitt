@@ -43,6 +43,7 @@ export class LocalPoller {
   private readonly mapper = new SensorMapper();
   private scanTimer: ReturnType<typeof setInterval> | undefined;
   private mappingTimer: ReturnType<typeof setInterval> | undefined;
+  private started = false;
   // Gateway temperature unit for channelized temps. Donor: get_units_info "temperature"
   // (fallback "temp"); "0" -> Celsius, any other value -> Fahrenheit. Default 'C'.
   private gatewayTempUnit = 'C';
@@ -58,8 +59,16 @@ export class LocalPoller {
     return this.mapper;
   }
 
-  /** Do an immediate mapping refresh + live poll, then arm the two-tier schedule. */
+  /**
+   * Do an immediate mapping refresh + live poll, then arm the two-tier schedule.
+   * Rejects if already started: a second `start()` would overwrite the timer refs and leak the
+   * originals. Call `stop()` (which resets the started state) before starting again.
+   */
   async start(): Promise<void> {
+    if (this.started) {
+      throw new Error('LocalPoller already started');
+    }
+    this.started = true;
     await this.refreshMapping();
     await this.poll();
     const scanMs = this.opts.scanIntervalMs ?? DEFAULT_SCAN_MS;
@@ -68,12 +77,13 @@ export class LocalPoller {
     this.mappingTimer = setInterval(() => void this.refreshMapping(), mapMs);
   }
 
-  /** Clear both timers. Safe to call when not started. */
+  /** Clear both timers and reset the started state. Safe to call when not started. */
   stop(): void {
     if (this.scanTimer !== undefined) clearInterval(this.scanTimer);
     if (this.mappingTimer !== undefined) clearInterval(this.mappingTimer);
     this.scanTimer = undefined;
     this.mappingTimer = undefined;
+    this.started = false;
   }
 
   /** Re-read the gateway unit + sensor list and rebuild the live-key -> hardware-id mapping. Offline-tolerant. */
