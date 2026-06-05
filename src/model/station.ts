@@ -24,6 +24,11 @@ export interface SensorInfoLookup {
 
 const GATEWAY_OWNER = 'gateway';
 
+/** Immutable point-in-time snapshot of the whole station. */
+export interface StationSnapshot {
+  readonly sensors: ReadonlyArray<Sensor>;
+}
+
 function signalToNumber(raw: string | undefined): number | undefined {
   if (raw === undefined || raw.trim() === '') return undefined;
   const n = Number.parseInt(raw.trim(), 10);
@@ -118,6 +123,11 @@ export class Station {
   /** Immutable snapshot of all sensors. */
   getSensors(): Sensor[] {
     return [...this.sensors.values()];
+  }
+
+  /** Frozen snapshot of the station (sensors are immutable value objects). */
+  getStation(): StationSnapshot {
+    return Object.freeze({ sensors: this.getSensors() });
   }
 
   private pushOwner(passkey: string, channel: number | undefined): string {
