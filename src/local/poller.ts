@@ -10,7 +10,7 @@
  */
 
 import { decodeLiveData, type LiveReading, type RawLiveData } from './livedata.js';
-import { SensorMapper } from './sensor-mapper.js';
+import { SensorMapper, type MappedSensor } from './sensor-mapper.js';
 import type { SensorInfo } from './endpoints.js';
 
 const DEFAULT_SCAN_MS = 60_000;
@@ -48,6 +48,15 @@ export class LocalPoller {
   private gatewayTempUnit = 'C';
 
   constructor(private readonly opts: LocalPollerOptions) {}
+
+  /**
+   * The poller's own primed `SensorMapper`, exposed as a read-only `getSensorInfo` lookup so the
+   * facade/`Station` share the SAME mapper the poller refreshes — no duplicate `getAllSensors`
+   * fetch and no model/channel/signal drift. The mapper is primed on `start()`/`refreshMapping`.
+   */
+  getMapper(): { getSensorInfo(hardwareId: string): MappedSensor | undefined } {
+    return this.mapper;
+  }
 
   /** Do an immediate mapping refresh + live poll, then arm the two-tier schedule. */
   async start(): Promise<void> {
