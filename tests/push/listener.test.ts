@@ -44,3 +44,45 @@ describe('PushListener', () => {
     expect(addr.port).toBeGreaterThan(0);
   });
 });
+
+describe('PushListener — resilience', () => {
+  it('a throwing onForm callback does not crash the server (next POST still works)', async () => {
+    let calls = 0;
+    listener = new PushListener({
+      port: 0,
+      onForm: () => {
+        calls += 1;
+        if (calls === 1) throw new Error('boom');
+      },
+    });
+    const { port } = await listener.start();
+
+    const first = await post(port, 'PASSKEY=A&tempf=50.0');
+    expect(first.status).toBe(200);
+    expect(first.text).toBe('OK');
+
+    const second = await post(port, 'PASSKEY=B&tempf=51.0');
+    expect(second.status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  it('a non-form / garbage body is answered without crashing', async () => {
+    const received: Array<Record<string, string>> = [];
+    listener = new PushListener({ port: 0, onForm: (f) => received.push(f) });
+    const { port } = await listener.start();
+    const res = await post(port, '%%%not=a=valid&&form==body%zz');
+    expect(res.status).toBe(200);
+    expect(res.text).toBe('OK');
+    // URLSearchParams is lenient: it yields a (possibly odd) map, never throws — still no crash.
+    expect(received).toHaveLength(1);
+  });
+
+  it('a non-POST request is answered OK without invoking onForm', async () => {
+    let called = false;
+    listener = new PushListener({ port: 0, onForm: () => (called = true) });
+    const { port } = await listener.start();
+    const res = await fetch(`http://127.0.0.1:${port}/`, { method: 'GET' });
+    expect(res.status).toBe(200);
+    expect(called).toBe(false);
+  });
+});
