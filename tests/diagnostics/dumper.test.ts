@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SensorAccumulator } from '../../src/diagnostics/dumper.js';
+import { SensorAccumulator, buildCatalog } from '../../src/diagnostics/dumper.js';
 import type { Sensor } from '../../src/model/sensor.js';
 
 function sensor(p: Partial<Sensor>): Sensor {
@@ -64,5 +64,26 @@ describe('SensorAccumulator', () => {
     const snap = acc.snapshot();
     expect(snap['battery:wh40batt']).toBeUndefined(); // decodable -> not flagged
     expect(snap['battery:wh90batt']?.unmapped).toEqual(['wh90batt']);
+  });
+});
+
+describe('buildCatalog', () => {
+  it('lists distinct (model, channel) pairs sorted deterministically + a capabilities summary', () => {
+    const sensors: Sensor[] = [
+      sensor({ model: 'wh31', channel: 1, quantity: 'temperature' }),
+      sensor({ model: 'wh31', channel: 1, quantity: 'humidity' }), // dup pair
+      sensor({ model: 'wh31', channel: 2, quantity: 'temperature' }),
+      sensor({ model: 'ws90', quantity: 'wind_speed' }),
+      sensor({ quantity: 'pressure' }), // no model -> excluded from sensors[]
+    ];
+    const cat = buildCatalog(sensors);
+    expect(cat.sensors).toEqual([
+      { model: 'wh31', channel: 1 },
+      { model: 'wh31', channel: 2 },
+      { model: 'ws90' },
+    ]);
+    expect(cat.commands).toBeUndefined(); // nodewitt has no commands
+    const caps = cat.capabilities;
+    expect(caps?.models).toEqual(['wh31', 'ws90']);
   });
 });

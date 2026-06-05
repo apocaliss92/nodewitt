@@ -110,3 +110,39 @@ export class SensorAccumulator {
     return out;
   }
 }
+
+type DumpCatalog = DeviceDump['catalog'];
+type CatalogSensor = NonNullable<DumpCatalog['sensors']>[number];
+
+/**
+ * Build the STATIC catalog from the live sensors: the distinct `(model, channel)`
+ * pairs (sorted by model then channel) + a non-sensitive capability summary of the
+ * distinct img tokens + measurement quantities seen. Reads only the observed
+ * Sensor list — NEVER queries or commands the gateway. `commands` is omitted
+ * (nodewitt exposes no actions).
+ */
+export function buildCatalog(sensors: ReadonlyArray<Sensor>): DumpCatalog {
+  const pairs = new Map<string, CatalogSensor>();
+  const models = new Set<string>();
+  for (const s of sensors) {
+    if (s.model === undefined || s.model === '') {
+      continue;
+    }
+    models.add(s.model);
+    const pairKey = `${s.model}|${s.channel ?? ''}`;
+    if (!pairs.has(pairKey)) {
+      pairs.set(
+        pairKey,
+        s.channel !== undefined ? { model: s.model, channel: s.channel } : { model: s.model },
+      );
+    }
+  }
+  const sensorList = [...pairs.values()].sort((a, b) =>
+    a.model === b.model ? (a.channel ?? 0) - (b.channel ?? 0) : a.model < b.model ? -1 : 1,
+  );
+  const quantities = [...new Set(sensors.map((s) => String(s.quantity)))].sort();
+  return {
+    sensors: sensorList,
+    capabilities: { models: [...models].sort(), quantities },
+  };
+}
