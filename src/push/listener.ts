@@ -12,6 +12,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { decodePushForm, type PushDecodeResult } from './ecowitt-form.js';
 
 /** Default Ecowitt "Customized" listen port (documented protocol default). */
 export const DEFAULT_PUSH_PORT = 4199;
@@ -24,8 +25,10 @@ export interface PushListenerOptions {
   readonly port?: number;
   /** Optional bind host (default: all interfaces). */
   readonly host?: string;
-  /** Invoked with the parsed flat form map on each accepted POST. */
-  readonly onForm: (form: Record<string, string>) => void;
+  /** Raw flat-map callback (optional). At least one of onForm/onReadings is required. */
+  readonly onForm?: (form: Record<string, string>) => void;
+  /** Decoded-readings callback (optional). At least one of onForm/onReadings is required. */
+  readonly onReadings?: (result: PushDecodeResult) => void;
   /** Optional error sink (parse/callback failures); never throws back into the server. */
   readonly onError?: (error: unknown) => void;
 }
@@ -43,6 +46,9 @@ export class PushListener {
   private server: Server | undefined;
 
   constructor(options: PushListenerOptions) {
+    if (options.onForm === undefined && options.onReadings === undefined) {
+      throw new Error('PushListener: provide onForm and/or onReadings');
+    }
     this.options = options;
   }
 
@@ -120,7 +126,8 @@ export class PushListener {
   private dispatch(body: string, res: ServerResponse): void {
     try {
       const form = parseFormBody(body);
-      this.options.onForm(form);
+      if (this.options.onForm !== undefined) this.options.onForm(form);
+      if (this.options.onReadings !== undefined) this.options.onReadings(decodePushForm(form));
     } catch (error) {
       this.report(error);
     } finally {

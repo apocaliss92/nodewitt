@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { PushListener } from '../../src/push/listener.js';
+import { PushListener, type PushListenerOptions } from '../../src/push/listener.js';
 import type { AddressInfo } from 'node:net';
+import type { PushDecodeResult } from '../../src/push/ecowitt-form.js';
 
 let listener: PushListener | undefined;
 
@@ -84,5 +85,28 @@ describe('PushListener — resilience', () => {
     const res = await fetch(`http://127.0.0.1:${port}/`, { method: 'GET' });
     expect(res.status).toBe(200);
     expect(called).toBe(false);
+  });
+});
+
+describe('PushListener — decoded readings', () => {
+  it('decodes the form and surfaces readings via onReadings', async () => {
+    const results: PushDecodeResult[] = [];
+    listener = new PushListener({ port: 0, onReadings: (r) => results.push(r) });
+    const { port } = await listener.start();
+    await post(port, 'PASSKEY=ABC&tempf=50.0&humidity=82&wh65batt=0&pm25_ch1=12.5');
+
+    expect(results).toHaveLength(1);
+    const result = results[0];
+    expect(result?.passkey).toBe('ABC');
+    const by = (k: string) => result?.readings.find((rr) => rr.key === k);
+    expect(by('tempf')?.value).toBeCloseTo(10.0, 1);
+    expect(by('humidity')?.value).toBe(82);
+    expect(by('wh65batt')?.battery).toBe(100);
+    expect(by('pm25_ch1')?.channel).toBe(1);
+  });
+
+  it('throws when neither onForm nor onReadings is provided', () => {
+    const opts: PushListenerOptions = { port: 0 };
+    expect(() => new PushListener(opts)).toThrow();
   });
 });
