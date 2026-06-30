@@ -7,4 +7,4 @@ export const LIBRARY_NAME = 'nodewitt';
  * guards drift) — a string constant avoids an ESM JSON-import assertion wrinkle
  * in the published bundle.
  */
-export const LIBRARY_VERSION = '1.1.1';
+export const LIBRARY_VERSION = '1.2.0';

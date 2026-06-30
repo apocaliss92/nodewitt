@@ -3,13 +3,25 @@ import { classifyKey } from '../../src/model/quantity.js';
 
 describe('classifyKey', () => {
   it('classifies a hex-id key via the hex table', () => {
-    expect(classifyKey('0x02')).toEqual({ kind: 'measurement', quantity: 'temperature' });
-    expect(classifyKey('0x0E')).toEqual({ kind: 'measurement', quantity: 'precipitation_rate' });
+    expect(classifyKey('0x02')).toEqual({
+      kind: 'measurement',
+      quantity: 'temperature',
+      name: 'Outdoor Temperature',
+    });
+    expect(classifyKey('0x0E')).toEqual({
+      kind: 'measurement',
+      quantity: 'precipitation_rate',
+      name: 'Rain Rate',
+    });
   });
 
   it('classifies the decimal-id Feels Like ("3") and VPD ("5") common_list keys', () => {
-    expect(classifyKey('3')).toEqual({ kind: 'measurement', quantity: 'temperature' });
-    expect(classifyKey('5')).toEqual({ kind: 'measurement', quantity: 'vpd' });
+    expect(classifyKey('3')).toEqual({
+      kind: 'measurement',
+      quantity: 'temperature',
+      name: 'Feels Like',
+    });
+    expect(classifyKey('5')).toEqual({ kind: 'measurement', quantity: 'vpd', name: 'VPD' });
   });
 
   it('classifies named scalar/channel measurement keys', () => {

@@ -22,6 +22,10 @@ export interface Sensor {
   readonly model?: string;
   /** Channel (1..8) for per-channel sensors. */
   readonly channel?: number;
+  /** Specific measurement name when known from the hex-id table (e.g. "Outdoor
+   *  Temperature", "Dewpoint Temperature", "Wind Gust") — distinguishes sensors
+   *  that share a `quantity`. Absent for named/pattern keys. */
+  readonly name?: string;
   /** Normalized physical quantity. */
   readonly quantity: Quantity;
   /** SI value. */

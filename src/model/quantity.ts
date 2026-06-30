@@ -16,7 +16,7 @@ import { lookupHexId, type Quantity } from '../protocol/hex-ids.js';
 import type { BatteryUnit } from './sensor.js';
 
 export type KeyClass =
-  | { readonly kind: 'measurement'; readonly quantity: Quantity }
+  | { readonly kind: 'measurement'; readonly quantity: Quantity; readonly name?: string }
   | { readonly kind: 'battery'; readonly batteryUnit: BatteryUnit }
   | { readonly kind: 'unknown' };
 
@@ -65,7 +65,11 @@ export function classifyKey(key: string): KeyClass {
   if (batteryUnit !== undefined) return { kind: 'battery', batteryUnit };
 
   const hex = lookupHexId(key);
-  if (hex !== undefined) return { kind: 'measurement', quantity: hex.quantity };
+  // Carry the specific measurement name (e.g. "Outdoor Temperature", "Dewpoint
+  // Temperature", "Wind Gust") so consumers can distinguish sensors that share a
+  // quantity. Only the hex-id table has these human names; named/pattern keys
+  // leave `name` undefined (the consumer falls back to the quantity label).
+  if (hex !== undefined) return { kind: 'measurement', quantity: hex.quantity, name: hex.name };
 
   const named = Object.prototype.hasOwnProperty.call(NAMED_QUANTITY, key)
     ? NAMED_QUANTITY[key]

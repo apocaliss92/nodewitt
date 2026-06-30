@@ -71,6 +71,7 @@ export class Station {
           ...(owner !== undefined ? { hardwareId: owner } : {}),
           ...(info?.model ? { model: info.model } : {}),
           ...(info?.channel !== undefined ? { channel: info.channel } : {}),
+          ...(cls.name !== undefined ? { name: cls.name } : {}),
           quantity: cls.quantity,
           value: r.value,
           unit: r.unit,
@@ -107,6 +108,7 @@ export class Station {
         {
           id,
           ...(r.channel !== undefined ? { channel: r.channel } : {}),
+          ...(cls.name !== undefined ? { name: cls.name } : {}),
           quantity: cls.quantity,
           value: r.value,
           unit: r.unit,
