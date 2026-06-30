@@ -198,7 +198,7 @@ describe('LocalPoller', () => {
     poller.stop();
   });
 
-  it('survives a failed mapping refresh and keeps polling', async () => {
+  it('survives a failed mapping refresh and keeps polling (but withholds until primed)', async () => {
     const endpoints = makeEndpoints({
       sensors: async (): Promise<SensorInfo[]> => {
         throw new Error('sensors endpoint down');
@@ -215,9 +215,60 @@ describe('LocalPoller', () => {
     });
 
     await poller.start();
-    // mapping failed but the live poll still ran and emitted
+    // Withhold-until-ready: the map never primed, so the live poll ran but its
+    // batch was WITHHELD (an unmapped batch carries incomplete sensor identities
+    // that downstream can never heal). The schedule still survives. The first
+    // mapping refresh failed once (start) and again on the in-poll retry → 2 errors.
+    expect(errors.length).toBe(2);
+    expect(emitted).toBe(0);
+
+    poller.stop();
+  });
+
+  it('withholds the first batch until the map primes, then emits a complete one', async () => {
+    let sensorCalls = 0;
+    const endpoints = makeEndpoints({
+      // First mapping fetch fails (gateway powering up), the next succeeds.
+      sensors: async (): Promise<SensorInfo[]> => {
+        sensorCalls += 1;
+        if (sensorCalls === 1) throw new Error('sensors endpoint down');
+        return SENSORS;
+      },
+    });
+    const batches: Array<Array<{ key: string; hardwareId: string | undefined }>> = [];
+    const errors: unknown[] = [];
+    const poller = new LocalPoller({
+      endpoints,
+      scanIntervalMs: 60_000,
+      mappingIntervalMs: 600_000,
+      onReadings: (r) => batches.push(r),
+      onError: (e) => errors.push(e),
+    });
+
+    await poller.start();
+    // start(): mapping #1 fails → poll retries mapping (#2 succeeds, primes), so
+    // the very first poll DID emit a complete batch resolved to a hardware id.
     expect(errors.length).toBe(1);
-    expect(emitted).toBe(1);
+    expect(batches.length).toBe(1);
+    expect(batches[0]!.find((r) => r.key === '0x02')?.hardwareId).toBe('A1');
+
+    poller.stop();
+  });
+
+  it('does not re-fetch the map once primed (the gate is idempotent)', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({
+      endpoints,
+      scanIntervalMs: 60_000,
+      mappingIntervalMs: 600_000,
+      onReadings: () => {},
+      onError: () => {},
+    });
+
+    await poller.start();
+    expect(endpoints.getAllSensors).toHaveBeenCalledTimes(1); // primed on start
+    await vi.advanceTimersByTimeAsync(60_000); // a scan tick — must NOT re-fetch the map
+    expect(endpoints.getAllSensors).toHaveBeenCalledTimes(1);
 
     poller.stop();
   });

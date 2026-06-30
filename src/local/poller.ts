@@ -53,6 +53,17 @@ export class LocalPoller {
   private scanTimer: ReturnType<typeof setInterval> | undefined;
   private mappingTimer: ReturnType<typeof setInterval> | undefined;
   private started = false;
+  // Withhold-until-ready gate: a live poll resolves each reading's owner (and
+  // thus the sensor's stable id + model/channel) against the sensor map. The map
+  // is primed by `refreshMapping`. Until the FIRST successful prime, a sensor's
+  // owner would fall back to the gateway and its model/channel would be absent —
+  // i.e. an INCOMPLETE sensor. Because a sensor's identity is fixed at create
+  // time and never re-derived downstream, emitting that incomplete reading would
+  // permanently freeze a generic name. So the poller WITHHOLDS every poll batch
+  // (never calls `onReadings`) until the map has been primed at least once. The
+  // schedule keeps running; the first successful prime unblocks emission. Atomic:
+  // either a fully-resolved batch or nothing — never a partial-then-heal.
+  private mappingPrimed = false;
   // Gateway temperature unit for channelized temps. Donor: get_units_info "temperature"
   // (fallback "temp"); "0" -> Celsius, any other value -> Fahrenheit. Default 'C'.
   private gatewayTempUnit = 'C';
@@ -103,6 +114,9 @@ export class LocalPoller {
     this.scanTimer = undefined;
     this.mappingTimer = undefined;
     this.started = false;
+    // Re-arm the withhold gate: a restart must re-prime before emitting again, so
+    // a fresh run never surfaces a batch resolved against the previous map.
+    this.mappingPrimed = false;
   }
 
   /** Re-read the gateway unit + sensor list and rebuild the live-key -> hardware-id mapping. Offline-tolerant. */
@@ -118,6 +132,9 @@ export class LocalPoller {
       };
       const sensors = await this.opts.endpoints.getAllSensors();
       this.mapper.updateMapping(sensors);
+      // The map is now primed: subsequent polls resolve complete sensor identities,
+      // so emission is unblocked (withhold-until-ready). Idempotent once set.
+      this.mappingPrimed = true;
     } catch (error) {
       this.opts.onError(error);
     }
@@ -126,6 +143,10 @@ export class LocalPoller {
   /** Fetch + decode + resolve a single live-data snapshot, then emit it. Offline-tolerant. */
   private async poll(): Promise<void> {
     try {
+      // If the FIRST mapping refresh failed (gateway powering up), retry it here so
+      // recovery happens on the next scan tick rather than waiting a full mapping
+      // cadence (~10 min). Cheap once primed: the guard skips the re-fetch.
+      if (!this.mappingPrimed) await this.refreshMapping();
       const raw = await this.opts.endpoints.getLiveData();
       this.opts.onRawFrame?.(raw);
       const decoded = decodeLiveData(raw, this.mapper, {}, this.gatewayTempUnit);
@@ -135,6 +156,11 @@ export class LocalPoller {
           ? undefined
           : (reading.forceHardwareId ?? this.mapper.getHardwareId(reading.key)),
       }));
+      // Withhold-until-ready: do not surface a batch resolved against an unprimed
+      // map — its sensors would carry incomplete (gateway-fallback, model/channel-
+      // less) identities that downstream can never heal. The next poll after the
+      // first successful mapping refresh emits a complete batch.
+      if (!this.mappingPrimed) return;
       this.opts.onReadings(resolved);
     } catch (error) {
       this.opts.onError(error);
