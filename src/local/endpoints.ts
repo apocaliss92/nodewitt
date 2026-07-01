@@ -37,7 +37,7 @@ const liveDataItemSchema = z
   .passthrough();
 
 /** A free-form gateway sub-array item — the decoder reads its fields via cast-free narrowing. */
-const subArraySchema = z.array(z.record(z.unknown()));
+const subArraySchema = z.array(z.record(z.string(), z.unknown()));
 
 /**
  * Live-data envelope. `common_list` is the required core array (the donor raises without it);
@@ -133,7 +133,7 @@ export class Endpoints {
 
   async getUnits(): Promise<Record<string, unknown>> {
     const raw = await this.http.getJson(PATH.units);
-    return z.record(z.unknown()).parse(raw);
+    return z.record(z.string(), z.unknown()).parse(raw);
   }
 
   async getSoilCalibration(): Promise<Record<string, unknown>[]> {
@@ -147,7 +147,7 @@ export class Endpoints {
   private async optionalArray(path: string): Promise<Record<string, unknown>[]> {
     try {
       const raw = await this.http.getJson(path);
-      const parsed = z.array(z.record(z.unknown())).safeParse(raw);
+      const parsed = z.array(z.record(z.string(), z.unknown())).safeParse(raw);
       return parsed.success ? parsed.data : [];
     } catch {
       return [];

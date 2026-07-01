@@ -1,6 +1,6 @@
 {
   "name": "@apocaliss92/nodewitt",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Node.js/TypeScript client for Ecowitt weather stations (local poll + push)",
   "license": "MIT",
   "author": "apocaliss92",
@@ -58,7 +58,7 @@
   },
   "dependencies": {
     "undici": "^6.26.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "publishConfig": {
     "access": "public"
