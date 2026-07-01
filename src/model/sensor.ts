@@ -9,6 +9,7 @@
  */
 
 import type { Quantity } from '../protocol/hex-ids.js';
+import type { SensorCategory } from '../protocol/sensor-models.js';
 
 /** Battery value discriminator: a decoded percent, or a raw voltage. */
 export type BatteryUnit = '%' | 'V';
@@ -22,6 +23,10 @@ export interface Sensor {
   readonly model?: string;
   /** Channel (1..8) for per-channel sensors. */
   readonly channel?: number;
+  /** Self-describing logical grouping derived from `model` (see `categoryForModel`):
+   *  'gateway' | 'weather-station' | 'channel-sensor' | 'external'. Lets a consumer split a
+   *  single gateway into logical devices without maintaining its own model→group table. */
+  readonly category?: SensorCategory;
   /** Specific measurement name when known from the hex-id table (e.g. "Outdoor
    *  Temperature", "Dewpoint Temperature", "Wind Gust") — distinguishes sensors
    *  that share a `quantity`. Absent for named/pattern keys. */

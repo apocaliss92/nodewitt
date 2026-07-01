@@ -20,7 +20,7 @@ const INDEX_SOURCE = readFileSync(
 );
 
 /** Value exports that MUST exist as runtime keys on the package root. */
-const VALUE_EXPORTS = ['Ecowitt', 'LIBRARY_NAME', 'createDumper'] as const;
+const VALUE_EXPORTS = ['Ecowitt', 'LIBRARY_NAME', 'createDumper', 'categoryForModel'] as const;
 
 /** Type-only exports that MUST appear in an `export type { … }` in the source (no runtime key). */
 const TYPE_EXPORTS = [
@@ -37,6 +37,7 @@ const TYPE_EXPORTS = [
   'StationInfo',
   'DumperOptions',
   'DeviceDump',
+  'SensorCategory',
 ] as const;
 
 /**

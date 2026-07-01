@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { liveDataKeysForModel } from '../../src/protocol/sensor-models.js';
+import { categoryForModel, liveDataKeysForModel } from '../../src/protocol/sensor-models.js';
 
 describe('sensor model -> live-data keys', () => {
   it('wh31 (temp/hum, channelized)', () => {
@@ -162,5 +162,73 @@ describe('sensor model -> live-data keys', () => {
 
   it('returns [] for a channelized model with no channel', () => {
     expect(liveDataKeysForModel('wh31')).toEqual([]);
+  });
+});
+
+describe('categoryForModel (self-describing sensor grouping)', () => {
+  it('empty / undefined model → gateway (gateway-firmware indoor readings carry no model)', () => {
+    expect(categoryForModel('')).toBe('gateway');
+    expect(categoryForModel('   ')).toBe('gateway');
+    expect(categoryForModel(undefined)).toBe('gateway');
+  });
+
+  it.each([
+    'wh69',
+    'wh65',
+    'ws90',
+    'wh80',
+    'ws80',
+    'wh90',
+    'wh77',
+    'wh85',
+    'ws85',
+    'wh68',
+  ])('weather-station model %s → weather-station', (model) => {
+    expect(categoryForModel(model)).toBe('weather-station');
+  });
+
+  it.each([
+    'wh31',
+    'wh41',
+    'wh52',
+    'wh51',
+    'wh55',
+    'wh34',
+    'wn34',
+    'wh35',
+    'wn35',
+    'wh54',
+  ])('channel-sensor model %s → channel-sensor', (model) => {
+    expect(categoryForModel(model)).toBe('channel-sensor');
+  });
+
+  it.each(['wh57', 'wh40', 'wh45', 'wh46'])('external model %s → external', (model) => {
+    expect(categoryForModel(model)).toBe('external');
+  });
+
+  it('indoor / console models (wh25, wh26, wn32, wn38) → gateway', () => {
+    expect(categoryForModel('wh25')).toBe('gateway');
+    expect(categoryForModel('wh26')).toBe('gateway');
+    expect(categoryForModel('wn32')).toBe('gateway');
+    expect(categoryForModel('wn38')).toBe('gateway');
+  });
+
+  it('is case-insensitive on the model token', () => {
+    expect(categoryForModel('WH31')).toBe('channel-sensor');
+    expect(categoryForModel('Ws90')).toBe('weather-station');
+    expect(categoryForModel('WH57')).toBe('external');
+  });
+
+  it('donor alias tokens classify the same as their WH/WS codes', () => {
+    expect(categoryForModel('temp_hum')).toBe('channel-sensor');
+    expect(categoryForModel('lightning')).toBe('external');
+    expect(categoryForModel('rain')).toBe('external');
+    expect(categoryForModel('combo')).toBe('external');
+    expect(categoryForModel('weather_station')).toBe('weather-station');
+    expect(categoryForModel('indoor_station')).toBe('gateway');
+  });
+
+  it('an unknown but non-empty model is never dropped → gateway', () => {
+    expect(categoryForModel('zz99')).toBe('gateway');
   });
 });

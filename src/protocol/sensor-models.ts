@@ -311,6 +311,110 @@ const fixed: Record<string, string[]> = {
 };
 
 /**
+ * Self-describing logical grouping of a sensor, derived purely from its `model` token.
+ *
+ *  - `gateway`         — the gateway/console itself and its indoor-firmware readings
+ *                        (WH25 indoor station, or any reading with no resolvable model).
+ *  - `weather-station` — the all-in-one outdoor array / wind-solar console sensors
+ *                        (WH69/WH65/WS90/WH80/WS80/WH90/WH77/WH85/WS85/WH68).
+ *  - `channel-sensor`  — the multi-channel add-on sensors that carry a `CH(n)` channel
+ *                        (WH31/WH41/WH52/WH51/WH55/WH34/WN34/WH35/WN35/WH54).
+ *  - `external`        — standalone single-purpose sensors that are neither the console
+ *                        nor a CH-indexed add-on (WH57 lightning, WH40 rain, WH45/WH46 combo).
+ *
+ * This is the single source of truth a consumer uses to split one gateway into logical
+ * devices. It is intentionally `model`-only (channel is layered on by the consumer when it
+ * wants to further split a channel-sensor, e.g. CH1 vs the rest).
+ */
+export type SensorCategory = 'gateway' | 'weather-station' | 'channel-sensor' | 'external';
+
+// Model tokens (and donor aliases) per category. The WH/WS/WN codes plus the donor alias
+// tokens used by `channelized`/`fixed` above are both classified so a sensor resolves the
+// same whether it was matched by its hardware `img` code or a donor alias.
+const WEATHER_STATION_MODELS: ReadonlySet<string> = new Set([
+  'wh69',
+  'wh65',
+  'ws90',
+  'wh80',
+  'ws80',
+  'wh90',
+  'wh77',
+  'wh85',
+  'ws85',
+  'wh68',
+  // donor aliases that resolve the same fixed key sets
+  'weather_station',
+  'weather_station_wh69',
+  'weather_station_ws90',
+  'weather_station_wh90',
+  'weather_station_wh77',
+]);
+
+const CHANNEL_SENSOR_MODELS: ReadonlySet<string> = new Set([
+  'wh31',
+  'wh41',
+  'wh52',
+  'wh51',
+  'wh55',
+  'wh34',
+  'wn34',
+  'wh35',
+  'wn35',
+  'wh54',
+  // donor aliases
+  'temp_hum',
+  'pm25',
+  'soil',
+  'soil_ec',
+  'leak',
+  'temp_only',
+  'leaf_wetness',
+  'lds',
+]);
+
+const EXTERNAL_MODELS: ReadonlySet<string> = new Set([
+  'wh57',
+  'wh40',
+  'wh45',
+  'wh46',
+  // donor aliases
+  'lightning',
+  'rain',
+  'combo',
+  'co2_pm',
+]);
+
+const GATEWAY_MODELS: ReadonlySet<string> = new Set([
+  'wh25',
+  'indoor_station',
+  // outdoor temp/hum + black-globe sit on the gateway/console firmware block
+  'wh26',
+  'wn32',
+  'outdoor_temp_hum',
+  'wn38',
+  'bgt',
+]);
+
+/**
+ * Classify a sensor into one of the four self-describing categories from its `model` token.
+ *
+ * An empty / unknown model resolves to `gateway`: gateway-firmware indoor readings (indoor
+ * temp/humidity/pressure emitted via common_list) carry no per-sensor model, and the safe
+ * default for anything otherwise unattributed is the console itself. Matching is
+ * case-insensitive, mirroring `liveDataKeysForModel`.
+ */
+export function categoryForModel(model: string | undefined): SensorCategory {
+  const key = norm(model ?? '');
+  if (key === '') return 'gateway';
+  if (WEATHER_STATION_MODELS.has(key)) return 'weather-station';
+  if (CHANNEL_SENSOR_MODELS.has(key)) return 'channel-sensor';
+  if (EXTERNAL_MODELS.has(key)) return 'external';
+  if (GATEWAY_MODELS.has(key)) return 'gateway';
+  // Unknown but non-empty model: treat as gateway-owned so it is never silently dropped.
+  return 'gateway';
+}
+
+/**
  * Live-data keys a sensor model owns. Returns a fresh array (never the internal one).
  * Channelized models require a positive integer channel; without one they return [].
  * Unknown models return [].

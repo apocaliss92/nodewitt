@@ -13,6 +13,10 @@ export { createDumper } from './diagnostics/dumper.js';
 export type { Sensor, BatteryUnit } from './model/sensor.js';
 export type { StationSnapshot } from './model/station.js';
 export type { Quantity } from './protocol/hex-ids.js';
+// Self-describing sensor grouping: a consumer (e.g. the camstack ecowitt provider) uses this to
+// split a single gateway into logical devices without maintaining its own model→group table.
+export type { SensorCategory } from './protocol/sensor-models.js';
+export { categoryForModel } from './protocol/sensor-models.js';
 export type {
   LocalOptions,
   ListenerOptions,

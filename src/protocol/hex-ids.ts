@@ -63,6 +63,11 @@ const HEX_ID_TABLE = {
   // WN38 Black Globe Thermometer
   '0xA1': { name: 'Black Globe Temperature', quantity: 'temperature', defaultUnit: '°C' },
   '0xA2': { name: 'WBGT', quantity: 'temperature', defaultUnit: '°C' },
+  // TODO(8E): hex id 0x8E is emitted by some gateways (~25× unmapped `8E:*` sub-sensors seen
+  // live) but its measurement name/quantity/unit are unknown. This is the place to add it —
+  // a single `'0x8E': { name, quantity, defaultUnit }` entry — but it is BLOCKED on a real
+  // `/get_livedata_info` frame dump from the device so the mapping is verified, not guessed.
+  // Do NOT add a speculative entry; an unknown id is safely classified `unknown` and ignored.
 } satisfies Record<string, HexIdInfo>;
 
 /** The full hex-ID table, frozen and read-only. */

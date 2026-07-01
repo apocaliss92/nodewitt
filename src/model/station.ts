@@ -13,6 +13,7 @@
 
 import { mergeSensor, type BatteryUnit, type Sensor, type SensorUpdate } from './sensor.js';
 import { classifyKey } from './quantity.js';
+import { categoryForModel } from '../protocol/sensor-models.js';
 import type { ResolvedReading } from '../local/poller.js';
 import type { MappedSensor } from '../local/sensor-mapper.js';
 import type { PushDecodeResult } from '../push/ecowitt-form.js';
@@ -64,6 +65,9 @@ export class Station {
         (owner !== undefined ? lookup.getSensorInfo(owner) : undefined);
       const id = `${owner ?? GATEWAY_OWNER}:${r.key}`;
       const signal = signalToNumber(info?.signal);
+      // Self-describing category from the resolved model (empty/unknown → 'gateway'). Lets a
+      // consumer split one gateway into logical devices without its own model→group table.
+      const category = categoryForModel(info?.model);
       this.upsert(
         id,
         {
@@ -71,6 +75,7 @@ export class Station {
           ...(owner !== undefined ? { hardwareId: owner } : {}),
           ...(info?.model ? { model: info.model } : {}),
           ...(info?.channel !== undefined ? { channel: info.channel } : {}),
+          category,
           ...(cls.name !== undefined ? { name: cls.name } : {}),
           quantity: cls.quantity,
           value: r.value,
@@ -103,11 +108,16 @@ export class Station {
       if (cls.kind !== 'measurement') continue;
       const owner = this.pushOwner(passkey, r.channel);
       const id = `${owner}:${r.key}`;
+      // Push has no per-sensor model, so category is best-effort: a CH-indexed reading is a
+      // channel-sensor, anything channel-less defaults to the gateway/console. (The local-poll
+      // path, which the camstack provider uses, classifies precisely from the resolved model.)
+      const category: Sensor['category'] = r.channel !== undefined ? 'channel-sensor' : 'gateway';
       this.upsert(
         id,
         {
           id,
           ...(r.channel !== undefined ? { channel: r.channel } : {}),
+          category,
           ...(cls.name !== undefined ? { name: cls.name } : {}),
           quantity: cls.quantity,
           value: r.value,
