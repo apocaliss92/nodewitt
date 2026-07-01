@@ -6,6 +6,9 @@ export { LIBRARY_NAME } from './support/version.js';
 
 export { Ecowitt } from './api/ecowitt.js';
 
+// Network discovery (GW1000 UDP broadcast). Public types only; the socket + parser stay internal.
+export type { DiscoveredGateway, DiscoverOptions } from './discovery/discovery.js';
+
 // Read-only diagnostic dumper (programmatic; anonymized output).
 export { createDumper } from './diagnostics/dumper.js';
 

@@ -26,6 +26,12 @@ import type { PushDecodeResult } from '../push/ecowitt-form.js';
 import { Station, type StationSnapshot, type SensorInfoLookup } from '../model/station.js';
 import type { RawLiveData } from '../local/livedata.js';
 import { TypedEmitter, type Listener } from './events.js';
+import {
+  discoverGateways,
+  type DiscoveredGateway,
+  type DiscoverOptions,
+} from '../discovery/discovery.js';
+import { createDgramSocket } from '../discovery/socket.js';
 import type {
   EcowittEvents,
   LocalOptions,
@@ -106,6 +112,22 @@ export class Ecowitt {
 
   static createListener(options: ListenerOptions = {}): Ecowitt {
     return Ecowitt.#buildListener(defaultListenerBuilder(options));
+  }
+
+  /**
+   * Discover Ecowitt gateways on the network via the `CMD_BROADCAST` UDP probe (port 46000). Opens a
+   * throwaway UDP socket, sweeps the broadcast address (local subnet by default, or a directed
+   * broadcast passed via {@link DiscoverOptions.broadcastAddr} for another subnet), collects
+   * responders deduped by MAC, and closes the socket. No `Ecowitt` instance or connection is
+   * created — the caller maps the results to whatever onboarding flow it uses.
+   */
+  static async discover(options?: DiscoverOptions): Promise<DiscoveredGateway[]> {
+    const socket = await createDgramSocket();
+    try {
+      return await discoverGateways(socket, options);
+    } finally {
+      await socket.close().catch(() => undefined);
+    }
   }
 
   /**
