@@ -3,18 +3,17 @@
  *
  * Ported from the MIT `ecowitt_local` `api.py` (`EcowittLocalAPI`): a GET-based JSON client
  * against `http://<host>:<port>`, with optional base64-encoded-password auth via
- * `POST /set_login_info` and a single re-auth + retry on a 401/403. The undici dependency is
- * injected through a typed `FetchImpl` seam so callers (and tests) supply the transport without
- * any cast — the default seam wraps `undici.request`.
+ * `POST /set_login_info` and a single re-auth + retry on a 401/403. The transport is injected
+ * through a typed `FetchImpl` seam so callers (and tests) supply it without any cast — the default
+ * seam wraps the runtime's global `fetch` (Node 18+), so the library ships with NO HTTP dependency
+ * (undici was ~27 MB RSS per bundled consumer; global fetch is provided by the Node binary).
  */
-
-import { request as undiciRequest } from 'undici';
 
 const DEFAULT_PORT = 80;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const AUTH_STATUSES = new Set([401, 403]);
 
-/** Minimal response shape the client consumes (subset of undici's response). */
+/** Minimal response shape the client consumes (subset of the fetch Response). */
 export interface FetchResponse {
   readonly statusCode: number;
   readonly json: () => Promise<unknown>;
@@ -29,7 +28,7 @@ export interface FetchOptions {
   readonly timeoutMs?: number;
 }
 
-/** Typed transport seam — `undici.request`-compatible, no cast at the call sites. */
+/** Typed transport seam — `fetch`-compatible, no cast at the call sites. */
 export type FetchImpl = (url: string, options?: FetchOptions) => Promise<FetchResponse>;
 
 export interface HttpClientOptions {
@@ -41,24 +40,23 @@ export interface HttpClientOptions {
 }
 
 /**
- * Default seam: adapt `undici.request` to the `FetchImpl` shape (no cast).
+ * Default seam: adapt the runtime's global `fetch` to the `FetchImpl` shape (no cast, no dep).
  * Excluded from coverage — it performs real network I/O and is exercised only by the
  * gated e2e (Task 7); unit tests always inject a `FetchImpl`.
  */
 /* v8 ignore start */
 const defaultFetchImpl: FetchImpl = async (url, options) => {
   const timeout = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const res = await undiciRequest(url, {
+  const res = await fetch(url, {
     method: options?.method ?? 'GET',
     ...(options?.headers !== undefined ? { headers: options.headers } : {}),
     ...(options?.body !== undefined ? { body: options.body } : {}),
-    headersTimeout: timeout,
-    bodyTimeout: timeout,
+    signal: AbortSignal.timeout(timeout),
   });
   return {
-    statusCode: res.statusCode,
-    json: () => res.body.json(),
-    text: () => res.body.text(),
+    statusCode: res.status,
+    json: () => res.json(),
+    text: () => res.text(),
   };
 };
 /* v8 ignore stop */
