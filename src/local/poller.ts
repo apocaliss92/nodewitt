@@ -40,7 +40,9 @@ export interface PollerStationInfo {
 
 export interface LocalPollerOptions {
   readonly endpoints: PollerEndpoints;
+  /** Live-data cadence in ms (default 60s). `0` arms NO timer: the caller drives `refresh()`. */
   readonly scanIntervalMs?: number;
+  /** Sensor-map cadence in ms (default 600s); with `scanIntervalMs: 0`, how old the map may get before `refresh()` re-reads it. */
   readonly mappingIntervalMs?: number;
   readonly onReadings: (readings: ResolvedReading[]) => void;
   readonly onError: (error: unknown) => void;
@@ -53,6 +55,7 @@ export class LocalPoller {
   private scanTimer: ReturnType<typeof setInterval> | undefined;
   private mappingTimer: ReturnType<typeof setInterval> | undefined;
   private started = false;
+  private mappingReadAt = 0;
   // Withhold-until-ready gate: a live poll resolves each reading's owner (and
   // thus the sensor's stable id + model/channel) against the sensor map. The map
   // is primed by `refreshMapping`. Until the FIRST successful prime, a sensor's
@@ -103,8 +106,24 @@ export class LocalPoller {
     await this.poll();
     const scanMs = this.opts.scanIntervalMs ?? DEFAULT_SCAN_MS;
     const mapMs = this.opts.mappingIntervalMs ?? DEFAULT_MAPPING_MS;
-    this.scanTimer = setInterval(() => void this.poll(), scanMs);
-    this.mappingTimer = setInterval(() => void this.refreshMapping(), mapMs);
+    // A scan cadence of 0 means "the caller schedules": no timer at all, `refresh()` is the entry
+    // point and still re-reads the map at `mappingIntervalMs`.
+    if (scanMs > 0) {
+      this.scanTimer = setInterval(() => void this.poll(), scanMs);
+      this.mappingTimer = setInterval(() => void this.refreshMapping(), mapMs);
+    }
+  }
+
+  /**
+   * One caller-driven read: the live data every call, and the sensor map first when it is older
+   * than `mappingIntervalMs` (default 600s) — so a caller that ticks at the live cadence still
+   * re-reads the map at the slow one. Offline-tolerant like the timers; a no-op before `start()`.
+   */
+  async refresh(): Promise<void> {
+    if (!this.started) return;
+    const mapMs = this.opts.mappingIntervalMs ?? DEFAULT_MAPPING_MS;
+    if (Date.now() - this.mappingReadAt >= mapMs) await this.refreshMapping();
+    await this.poll();
   }
 
   /** Clear both timers and reset the started state. Safe to call when not started. */
@@ -121,6 +140,7 @@ export class LocalPoller {
 
   /** Re-read the gateway unit + sensor list and rebuild the live-key -> hardware-id mapping. Offline-tolerant. */
   private async refreshMapping(): Promise<void> {
+    this.mappingReadAt = Date.now();
     try {
       const units = await this.opts.endpoints.getUnits();
       const code = units['temperature'] ?? units['temp'];

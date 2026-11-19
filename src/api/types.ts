@@ -17,9 +17,9 @@ export interface LocalOptions {
   readonly port?: number;
   /** Optional gateway password (newer firmware). */
   readonly password?: string;
-  /** Live-data poll interval in ms (default 60000). */
+  /** Live-data poll interval in ms (default 60000). `0` arms NO timer at all: the caller drives `refresh()`. */
   readonly pollIntervalMs?: number;
-  /** Sensor-map refresh interval in ms (default 600000). */
+  /** Sensor-map refresh interval in ms (default 600000). how old the map may get before `refresh()` re-reads it. */
   readonly mappingIntervalMs?: number;
 }
 

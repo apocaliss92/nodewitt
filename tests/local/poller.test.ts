@@ -359,3 +359,59 @@ describe('LocalPoller', () => {
     poller.stop();
   });
 });
+
+describe('LocalPoller caller-driven schedule', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('arms no timer at cadence 0 and reads only when refresh() is called', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({
+      endpoints,
+      scanIntervalMs: 0,
+      mappingIntervalMs: 600_000,
+      onReadings: () => {},
+      onError: () => {},
+    });
+    await poller.start();
+    expect(vi.getTimerCount()).toBe(0);
+    const liveAfterStart = endpoints.getLiveData.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(endpoints.getLiveData).toHaveBeenCalledTimes(liveAfterStart);
+
+    await poller.refresh();
+    expect(endpoints.getLiveData).toHaveBeenCalledTimes(liveAfterStart + 1);
+    poller.stop();
+  });
+
+  it('re-reads the sensor map on refresh() only once it is older than mappingIntervalMs', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({
+      endpoints,
+      scanIntervalMs: 0,
+      mappingIntervalMs: 600_000,
+      onReadings: () => {},
+      onError: () => {},
+    });
+    await poller.start();
+    expect(endpoints.getAllSensors).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await poller.refresh();
+    expect(endpoints.getAllSensors).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(600_000);
+    await poller.refresh();
+    expect(endpoints.getAllSensors).toHaveBeenCalledTimes(2);
+    poller.stop();
+  });
+
+  it('refresh() before start() reads nothing', async () => {
+    const endpoints = makeEndpoints();
+    const poller = new LocalPoller({
+      endpoints,
+      onReadings: () => {},
+      onError: () => {},
+    });
+    await poller.refresh();
+    expect(endpoints.getLiveData).not.toHaveBeenCalled();
+  });
+});

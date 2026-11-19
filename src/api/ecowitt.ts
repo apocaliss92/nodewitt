@@ -51,6 +51,8 @@ export interface LocalTransport extends TransportHandle {
   readonly lookup: SensorInfoLookup;
   /** Optional gateway identity source (model/firmware from `/get_version`). */
   getStationInfo?(): StationInfo;
+  /** One caller-driven read (see `LocalPoller.refresh`). */
+  refresh?(): Promise<void>;
 }
 
 /** A built listener transport: exposes the bound address (for `port: 0`). */
@@ -96,6 +98,7 @@ export class Ecowitt {
   readonly #transport: TransportHandle;
   #addressSource: (() => AddressInfo | undefined) | undefined;
   #stationInfoSource: (() => StationInfo) | undefined;
+  #refreshSource: (() => Promise<void>) | undefined;
 
   /**
    * Private constructor: instances are created only via the static factories / internal seams.
@@ -151,6 +154,9 @@ export class Ecowitt {
       if (transport.getStationInfo !== undefined) {
         self.#stationInfoSource = (): StationInfo => transport.getStationInfo?.() ?? {};
       }
+      if (transport.refresh !== undefined) {
+        self.#refreshSource = (): Promise<void> => transport.refresh?.() ?? Promise.resolve();
+      }
       return transport;
     });
   }
@@ -197,6 +203,15 @@ export class Ecowitt {
 
   async start(): Promise<void> {
     await this.#transport.start();
+  }
+
+  /**
+   * One read now, driven by the caller: the live data, plus the sensor map when it is due. Pair it
+   * with `pollIntervalMs: 0` to own the schedule. A no-op for the
+   * listener transport (the gateway pushes) and before `start()`.
+   */
+  async refresh(): Promise<void> {
+    await this.#refreshSource?.();
   }
 
   /**
@@ -295,6 +310,7 @@ function defaultLocalBuilder(options: LocalOptions): (opts: LocalBuildOptions) =
       // Share the poller's OWN primed mapper — single source of truth, kept fresh by the poller.
       lookup: poller.getMapper(),
       getStationInfo: () => poller.getStationInfo(),
+      refresh: () => poller.refresh(),
     };
   };
 }
